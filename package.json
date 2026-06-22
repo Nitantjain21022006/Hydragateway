@@ -1,0 +1,21 @@
+{
+  "name": "hydragateway",
+  "version": "1.0.0",
+  "description": "HydraGateway – Scalable Microservices Platform",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:lb": "cd packages/load-balancer && npm run dev",
+    "dev:gateway": "cd packages/gateway && npm run dev",
+    "dev:auth": "cd packages/auth-service && npm run dev",
+    "dev:product": "cd packages/product-service && npm run dev",
+    "dev:payment": "cd packages/payment-service && npm run dev",
+    "dev:order": "cd packages/order-service && npm run dev",
+    "dev:dashboard": "cd packages/dashboard && npm run dev"
+  },
+  "keywords": ["microservices", "api-gateway", "load-balancer", "redis", "jwt"],
+  "author": "HydraGateway",
+  "license": "MIT"
+}
