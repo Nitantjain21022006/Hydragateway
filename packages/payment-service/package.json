@@ -1,7 +1,7 @@
 {
-  "name": "@hydra/product-service",
+  "name": "@hydra/payment-service",
   "version": "1.0.0",
-  "description": "HydraGateway Product Service – Inventory management",
+  "description": "HydraGateway Payment Service – Payment processing and transaction tracking",
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
