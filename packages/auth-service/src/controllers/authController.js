@@ -79,7 +79,12 @@ const logout = asyncHandler(async (_req, res) => {
  * Requires the Gateway JWT middleware to populate req.user.
  */
 const me = asyncHandler(async (req, res) => {
-  const user = await User.findById(req.user.sub);
+  const userId = req.headers['x-user-id'] || (req.user && req.user.sub);
+  if (!userId) {
+    throw new AppError('User ID not found in request headers', 401, 'UNAUTHORIZED');
+  }
+
+  const user = await User.findById(userId);
   if (!user) {
     throw new AppError('User not found', 404, 'NOT_FOUND');
   }

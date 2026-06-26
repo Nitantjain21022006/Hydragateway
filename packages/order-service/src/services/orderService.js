@@ -31,7 +31,7 @@ class OrderService {
     for (const item of items) {
       try {
         const response = await axios.get(`${PRODUCT_SERVICE_URL}/v1/products/${item.productId}`);
-        const product = response.data.data;
+        const product = response.data.data.product;
 
         if (!product || !product.isActive) {
           throw new AppError(`Product ${item.productId} is not available`, 400, 'PRODUCT_UNAVAILABLE');
@@ -76,7 +76,7 @@ class OrderService {
         orderId: order.id,
       });
 
-      const payment = paymentResponse.data.data;
+      const payment = paymentResponse.data.data.payment;
       order.paymentId = payment.transactionId;
 
       if (payment.status === 'COMPLETED') {

@@ -15,7 +15,16 @@
     "dev:order": "cd packages/order-service && npm run dev",
     "dev:dashboard": "cd packages/dashboard && npm run dev"
   },
-  "keywords": ["microservices", "api-gateway", "load-balancer", "redis", "jwt"],
+  "keywords": [
+    "microservices",
+    "api-gateway",
+    "load-balancer",
+    "redis",
+    "jwt"
+  ],
   "author": "HydraGateway",
-  "license": "MIT"
+  "license": "MIT",
+  "dependencies": {
+    "redis": "^6.0.1"
+  }
 }

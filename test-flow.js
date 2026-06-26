@@ -122,7 +122,8 @@ function startServices() {
     const processEnv = {
       ...process.env,
       ...envConfig,
-      PORT: svc.port // Force sequential port assignments
+      PORT: svc.port, // Force sequential port assignments
+      HEALTH_CHECK_INTERVAL_MS: '1000' // Speed up health polling for E2E tests
     };
 
     const proc = spawn('node', ['src/server.js'], {
@@ -218,7 +219,7 @@ async function cleanDatabase() {
 
     // Delete test orders created during the run
     const orderRes = await mongoose.connection.collection('orders').deleteMany({
-      shippingAddress: { city: 'Testville' }
+      'shippingAddress.city': 'Testville'
     });
     console.log(`   Deleted test orders: ${orderRes.deletedCount}`);
 
@@ -362,7 +363,7 @@ async function runTests() {
     });
     const pCreateData = await pCreateRes.json();
     if (pCreateRes.status !== 201) throw new Error(`Product creation failed: ${JSON.stringify(pCreateData)}`);
-    productId = pCreateData.data.id;
+    productId = pCreateData.data.product.id;
     console.log(`   ✅ Product created successfully! ID: ${productId}`);
 
     // 2. Read Product by ID
@@ -372,7 +373,7 @@ async function runTests() {
     });
     const pGetData = await pGetRes.json();
     if (!pGetRes.ok) throw new Error(`Product fetch failed: ${JSON.stringify(pGetData)}`);
-    console.log(`   ✅ Succeeded! Name: "${pGetData.data.name}", Price: $${pGetData.data.price}`);
+    console.log(`   ✅ Succeeded! Name: "${pGetData.data.product.name}", Price: $${pGetData.data.product.price}`);
 
     // 3. Update Product
     console.log(`   Updating product price...`);
@@ -386,7 +387,7 @@ async function runTests() {
     });
     const pUpdateData = await pUpdateRes.json();
     if (!pUpdateRes.ok) throw new Error(`Product update failed: ${JSON.stringify(pUpdateData)}`);
-    console.log(`   ✅ Updated! New price: $${pUpdateData.data.price}, Stock: ${pUpdateData.data.stock}`);
+    console.log(`   ✅ Updated! New price: $${pUpdateData.data.product.price}, Stock: ${pUpdateData.data.product.stock}`);
 
     // 4. List Products
     console.log(`   Listing products in category 'test-category'...`);
@@ -395,7 +396,7 @@ async function runTests() {
     });
     const pListData = await pListRes.json();
     if (!pListRes.ok) throw new Error(`Products listing failed: ${JSON.stringify(pListData)}`);
-    console.log(`   ✅ Succeeded! Found ${pListData.data.length} test products.`);
+    console.log(`   ✅ Succeeded! Found ${pListData.data.products.length} test products.`);
   } catch (err) {
     console.error('❌ Phase 3 Failed:', err.message);
     throw err;
@@ -447,7 +448,7 @@ async function runTests() {
       });
       const payData = await payRes.json();
       if (payRes.ok) {
-        console.log(`   ✅ Payment Status: ${payData.data.status}, Method: ${payData.data.paymentMethod}`);
+        console.log(`   ✅ Payment Status: ${payData.data.status}, Amount: $${payData.data.amount}`);
       }
     }
 

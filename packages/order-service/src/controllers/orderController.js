@@ -5,7 +5,7 @@
  */
 
 const orderService = require('../services/orderService');
-const { sendSuccess } = require('../../../../shared/utils/successResponse');
+const { sendSuccess } = require('../../../../shared/utils/errorResponse');
 
 class OrderController {
   /**

@@ -100,7 +100,7 @@ registry.forEach((svc) => {
 
   // http-proxy-middleware instance for this service
   const proxy = createProxyMiddleware({
-    target: svc.target,
+    target: svc.target + svc.pathPrefix,
     changeOrigin: true,
     // Inject gateway-level headers before forwarding
     on: {
