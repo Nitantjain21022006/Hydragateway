@@ -51,10 +51,11 @@ const express = require('express');
 const { correlationId }   = require('../../../shared/middleware/correlationId');
 const { createServiceLogger } = require('../../../shared/utils/logger');
 
-const { requestLogger }    = require('./middleware/requestLogger');
+const { createRequestLogger } = require('../../../shared/middleware/requestLogger');
 const { jwtAuth }          = require('./middleware/jwtAuth');
 const { rateLimiter }      = require('./middleware/rateLimiter');
 const { startHealthPoller, getHealthSnapshot } = require('./middleware/healthCheck');
+const { responseCache }    = require('./middleware/cacheMiddleware');
 const gatewayRoutes        = require('./routes/gatewayRoutes');
 const { errorHandler }     = require('./middleware/errorHandler');
 
@@ -65,7 +66,8 @@ const app    = express();
 app.use(correlationId);
 
 // ── 2. Request Logger ─────────────────────────────────────────────────────────
-app.use(requestLogger);
+// Using the shared centralized request logger
+app.use(createRequestLogger(logger));
 
 // ── 3. JSON body parser (gateway-own routes only) ─────────────────────────────
 //    DO NOT put this before proxy routes — body parsing would consume the
@@ -78,7 +80,13 @@ app.use(jwtAuth);
 // ── 5. Rate Limiter ───────────────────────────────────────────────────────────
 app.use(rateLimiter);
 
-// ── 6. Gateway /health endpoint ───────────────────────────────────────────────
+// ── 6. Response Cache (Phase 8) ───────────────────────────────────────────────
+//    Cache product listings and single products.
+//    Only GET requests to these paths will be intercepted.
+app.get('/v1/products', responseCache('products', () => 'all'));
+app.get('/v1/products/:id', responseCache('products', (req) => req.params.id));
+
+// ── 7. Gateway /health endpoint ───────────────────────────────────────────────
 //    Reports the Gateway instance's own liveness and all downstream service
 //    health states in a single response.
 app.get('/health', (req, res) => {
@@ -92,7 +100,7 @@ app.get('/health', (req, res) => {
   });
 });
 
-// ── 7. Proxy Routes ───────────────────────────────────────────────────────────
+// ── 8. Proxy Routes ───────────────────────────────────────────────────────────
 app.use(gatewayRoutes);
 
 // ── 8. 404 – no proxy rule matched ────────────────────────────────────────────

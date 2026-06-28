@@ -6,7 +6,6 @@
 
 require('dotenv').config();
 const express = require('express');
-const morgan = require('morgan');
 const { connectDB } = require('../../../shared/config/dbConnect');
 const { correlationId } = require('../../../shared/middleware/correlationId');
 const { createServiceLogger } = require('../../../shared/utils/logger');
@@ -21,12 +20,9 @@ app.use(express.json({ limit: '10kb' }));
 app.use(express.urlencoded({ extended: false }));
 app.use(correlationId);
 
-// HTTP request logging via Morgan → Winston
-app.use(
-  morgan('combined', {
-    stream: { write: (msg) => logger.info(msg.trim()) },
-  })
-);
+// Centralized HTTP request logging
+const { createRequestLogger } = require('../../../shared/middleware/requestLogger');
+app.use(createRequestLogger(logger));
 
 // ── Routes ──────────────────────────────────────────────────────────────────
 app.get('/health', (_req, res) => {
