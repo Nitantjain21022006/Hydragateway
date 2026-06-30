@@ -1,4 +1,5 @@
 # ⚡ HydraGateway – Enterprise Microservices Platform
+### 👥 Developed by Team Vision21
 
 HydraGateway is a high-performance, resilient, and production-grade API Gateway & Load Balancer architecture built with **Node.js, Express, MongoDB, and Redis**. 
 
@@ -211,3 +212,9 @@ curl http://localhost:8080/analytics/endpoints?limit=5
   * `gateway.log` (Winston JSON format logs for Gateway requests)
   * `auth.log`, `product.log`, `payment.log`, `order.log`, `load-balancer.log`
 * In development, terminal windows will output clean, human-readable colorized strings showing correlation IDs to allow easy step-by-step request tracking.
+
+---
+
+## 👥 Authors
+This project is developed and maintained by **Team Vision21**.
+
