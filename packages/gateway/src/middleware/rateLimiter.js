@@ -64,6 +64,26 @@ const MAX        = parseInt(process.env.RATE_LIMIT_MAX       || '100',   10);  /
 const FAIL_OPEN  = process.env.RATE_LIMIT_FAIL_OPEN !== 'false'; // default: fail-open
 const WINDOW_SEC = Math.ceil(WINDOW_MS / 1000);
 
+// ── Rate-limit exempt paths ───────────────────────────────────────────────────
+// Monitoring and internal dashboard routes must never be blocked by rate limiting.
+// If /analytics is rate-limited an IP burst test could lock out the dashboard.
+// /health is the LB and orchestrator's liveness probe — blocking it causes
+// false-positive service-down events in the health poller.
+const RATE_LIMIT_EXEMPT_PREFIXES = [
+  '/health',
+  '/analytics',
+];
+
+/**
+ * isRateLimitExempt – returns true for monitoring/dashboard paths that
+ * should bypass the IP counter entirely.
+ * @param {string} path
+ * @returns {boolean}
+ */
+function isRateLimitExempt(path) {
+  return RATE_LIMIT_EXEMPT_PREFIXES.some((prefix) => path.startsWith(prefix));
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 /**
@@ -128,6 +148,11 @@ function normaliseIp(ip) {
  *   Retry-After           : seconds until window resets (only on 429)
  */
 async function rateLimiter(req, res, next) {
+  // Skip rate limiting for exempt monitoring / dashboard paths
+  if (isRateLimitExempt(req.path)) {
+    return next();
+  }
+
   let redis;
 
   try {

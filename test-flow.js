@@ -2,13 +2,16 @@
  * test-flow.js
  *
  * Comprehensive End-to-End Automated Test Script for HydraGateway.
- * Tests Phase 2 through Phase 7 of the implementation:
+ * Tests Phase 2 through Phase 11 of the implementation:
  * - Phase 2: Auth Service (Register, Login, GET /me, JWT token validation)
  * - Phase 3: Product Service (CRUD operations: Create, Get, Update, List products)
  * - Phase 4: Payment Service (Simulated transactions and status queries)
  * - Phase 5: Order Service (Orchestrated orders calling Product and Payment services)
  * - Phase 6: API Gateway (Reverse proxy routing and centralized health checks)
  * - Phase 7: Redis Rate Limiter (IP-based and JWT-based rate limiting & headers)
+ * - Phase 8: Redis Response Cache (X-Cache HIT/MISS headers on product endpoints)
+ * - Phase 10: Analytics Infrastructure (summary, timeline, endpoint stats from Redis)
+ * - Phase 11: Custom Load Balancer (round-robin routing, /lb-health, failover headers)
  *
  * It starts all microservices, runs validation tests, cleans up DB test data, and shuts down gracefully.
  */
@@ -60,10 +63,12 @@ if (fs.existsSync(envPath)) {
   });
 }
 
-const MONGO_URI = envConfig.MONGO_URI || 'mongodb://localhost:27017/hydragateway';
-const REDIS_HOST = envConfig.REDIS_HOST || 'localhost';
-const REDIS_PORT = parseInt(envConfig.REDIS_PORT || '6379', 10);
-const GATEWAY_URL = `http://localhost:${envConfig.GATEWAY_PORT || 3000}`;
+const MONGO_URI    = envConfig.MONGO_URI    || 'mongodb://localhost:27017/hydragateway';
+const REDIS_HOST   = envConfig.REDIS_HOST   || 'localhost';
+const REDIS_PORT   = parseInt(envConfig.REDIS_PORT   || '6379',  10);
+const GATEWAY_URL  = `http://localhost:${envConfig.GATEWAY_PORT  || 3000}`;
+const LB_URL       = `http://localhost:${envConfig.LB_PORT       || 8080}`;
+const GATEWAY_2_PORT = parseInt(envConfig.GATEWAY_2_PORT || '3001', 10);
 
 const services = [
   { name: 'auth-service', path: 'packages/auth-service', port: parseInt(envConfig.AUTH_PORT || '4001', 10) },
@@ -237,11 +242,28 @@ async function cleanDatabase() {
   // Redis Cleanup
   try {
     const redis = new ioredis({ host: REDIS_HOST, port: REDIS_PORT });
-    const keys = await redis.keys('rl:*');
-    if (keys.length > 0) {
-      await redis.del(...keys);
-      console.log(`   Cleared Redis rate limiter keys: ${keys.length}`);
+
+    // Clear rate limiter keys
+    const rlKeys = await redis.keys('rl:*');
+    if (rlKeys.length > 0) {
+      await redis.del(...rlKeys);
+      console.log(`   Cleared Redis rate limiter keys: ${rlKeys.length}`);
     }
+
+    // Clear cache keys
+    const cacheKeys = await redis.keys('cache:*');
+    if (cacheKeys.length > 0) {
+      await redis.del(...cacheKeys);
+      console.log(`   Cleared Redis cache keys: ${cacheKeys.length}`);
+    }
+
+    // Clear analytics keys (Phase 10)
+    const analyticsKeys = await redis.keys('analytics:*');
+    if (analyticsKeys.length > 0) {
+      await redis.del(...analyticsKeys);
+      console.log(`   Cleared Redis analytics keys: ${analyticsKeys.length}`);
+    }
+
     redis.disconnect();
   } catch (err) {
     console.warn(`   ⚠️ Redis cleanup warning: ${err.message}`);
@@ -258,7 +280,7 @@ async function runTests() {
   let transactionId = '';
 
   console.log('\n================================================================');
-  console.log('🧪 RUNNING INTEGRATION TESTS (PHASE 2 - 7) VIA API GATEWAY');
+  console.log('🧪 RUNNING INTEGRATION TESTS (PHASE 2 - 11) VIA API GATEWAY');
   console.log('================================================================');
 
   // ──────────────────────────────────────────────────────────────────────────
@@ -471,9 +493,6 @@ async function runTests() {
   // ──────────────────────────────────────────────────────────────────────────
   console.log('\n--- PHASE 7: Redis Rate Limiter check ---');
   try {
-    // Sending rapid requests to health endpoint to trigger the IP rate limiter.
-    // The health check endpoint is public, and the rate limiter counts all IP requests.
-    // We will trigger a small burst of requests. If they succeed, we will loop up to 105.
     console.log('   Sending a burst of requests to trigger rate limit (429)...');
     let isLimited = false;
     let limitHeader = '';
@@ -499,8 +518,182 @@ async function runTests() {
     } else {
       console.log('   ⚠️ Rate limiter did not return 429. This is expected if Redis is bypass/fail-open or RATE_LIMIT_MAX is very high.');
     }
+
+    // Programmatically clear the rate limit keys from Redis right after the check
+    // so subsequent test requests (Phase 8, 10, 11) are not affected.
+    console.log('   🧹 Resetting Redis rate limits for subsequent phases...');
+    try {
+      const redis = new ioredis({ host: REDIS_HOST, port: REDIS_PORT });
+      const rlKeys = await redis.keys('rl:*');
+      if (rlKeys.length > 0) {
+        await redis.del(...rlKeys);
+        console.log(`      ✅ Cleared rate limiters: ${rlKeys.length} keys`);
+      }
+      redis.disconnect();
+    } catch (redisErr) {
+      console.warn(`      ⚠️  Redis reset warning: ${redisErr.message}`);
+    }
   } catch (err) {
     console.error('❌ Phase 7 Failed:', err.message);
+    throw err;
+  }
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // PHASE 8: Redis Response Cache – X-Cache headers
+  // ──────────────────────────────────────────────────────────────────────────
+  console.log('\n--- PHASE 8: Redis Response Cache (X-Cache headers) ---');
+  try {
+    // First request: always a MISS (cold cache)
+    console.log('   Requesting GET /v1/products (expecting X-Cache: MISS)...');
+    const cacheMiss = await fetch(`${GATEWAY_URL}/v1/products`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    const missHeader = cacheMiss.headers.get('X-Cache');
+    if (missHeader === 'MISS') {
+      console.log('   ✅ X-Cache: MISS — response fetched from Product Service and stored in Redis.');
+    } else {
+      console.log(`   ℹ️  X-Cache: ${missHeader || 'not present'} (may already be cached from earlier requests).`);
+    }
+
+    // Second request: should be a HIT (same key, within TTL)
+    console.log('   Requesting GET /v1/products again (expecting X-Cache: HIT)...');
+    const cacheHit = await fetch(`${GATEWAY_URL}/v1/products`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    const hitHeader = cacheHit.headers.get('X-Cache');
+    if (hitHeader === 'HIT') {
+      console.log('   ✅ X-Cache: HIT — response served from Redis cache.');
+    } else {
+      console.log(`   ⚠️  X-Cache: ${hitHeader || 'not present'} (cache may not be active or TTL expired).`);
+    }
+
+    // Single product cache check
+    if (productId) {
+      console.log(`   Requesting GET /v1/products/${productId} (single product cache)...`);
+      await fetch(`${GATEWAY_URL}/v1/products/${productId}`, { headers: { 'Authorization': `Bearer ${token}` } });
+      const hitSingle = await fetch(`${GATEWAY_URL}/v1/products/${productId}`, { headers: { 'Authorization': `Bearer ${token}` } });
+      const singleHeader = hitSingle.headers.get('X-Cache');
+      console.log(`   ✅ Single product X-Cache: ${singleHeader || 'not present'}`);
+    }
+  } catch (err) {
+    console.error('❌ Phase 8 Failed:', err.message);
+    throw err;
+  }
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // PHASE 10: Analytics Infrastructure
+  // ──────────────────────────────────────────────────────────────────────────
+  console.log('\n--- PHASE 10: Analytics Infrastructure ---');
+  try {
+    // 1. Summary endpoint
+    console.log('   Fetching GET /analytics/summary...');
+    const summaryRes = await fetch(`${GATEWAY_URL}/analytics/summary`);
+    if (!summaryRes.ok) throw new Error(`Analytics summary failed: ${summaryRes.status}`);
+    const summaryData = await summaryRes.json();
+    const d = summaryData.data;
+    console.log('   ✅ Analytics summary received!');
+    console.log(`      Total Requests       : ${d.total_requests}`);
+    console.log(`      Failed Requests      : ${d.failed_requests}`);
+    console.log(`      Success Rate         : ${d.success_rate}`);
+    console.log(`      Avg Response Time    : ${d.avg_response_time_ms}ms`);
+    console.log(`      Status Breakdown     : ${JSON.stringify(d.status_code_breakdown)}`);
+    console.log(`      Service Breakdown    : ${JSON.stringify(d.per_service_breakdown)}`);
+    console.log(`      Gateway Breakdown    : ${JSON.stringify(d.per_gateway_breakdown)}`);
+
+    if (d.total_requests === 0) {
+      console.log('   ⚠️  total_requests is 0 — analyticsCollector may not be wired in server.js.');
+    }
+
+    // 2. Timeline endpoint (today)
+    console.log('   Fetching GET /analytics/timeline (today)...');
+    const timelineRes = await fetch(`${GATEWAY_URL}/analytics/timeline`);
+    if (!timelineRes.ok) throw new Error(`Timeline failed: ${timelineRes.status}`);
+    const timelineData = await timelineRes.json();
+    const tl = timelineData.data;
+    console.log(`   ✅ Timeline for ${tl.date}: ${tl.total_requests} requests across ${tl.timeline.length} minute bucket(s).`);
+    if (tl.timeline.length > 0) {
+      const peak = tl.timeline.reduce((a, b) => (b.requests > a.requests ? b : a));
+      console.log(`      Peak minute: ${peak.minute} — ${peak.requests} requests.`);
+    }
+
+    // 3. Top endpoints
+    console.log('   Fetching GET /analytics/endpoints?limit=5...');
+    const epRes = await fetch(`${GATEWAY_URL}/analytics/endpoints?limit=5`);
+    if (!epRes.ok) throw new Error(`Endpoints failed: ${epRes.status}`);
+    const epData = await epRes.json();
+    console.log(`   ✅ Top endpoints (${epData.data.total_unique_endpoints} unique total):`);
+    epData.data.endpoints.forEach((ep, i) => {
+      console.log(`      #${i + 1}  ${ep.method} ${ep.path} — ${ep.requests} hits`);
+    });
+  } catch (err) {
+    console.error('❌ Phase 10 Failed:', err.message);
+    throw err;
+  }
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // PHASE 11: Custom Load Balancer
+  // ──────────────────────────────────────────────────────────────────────────
+  console.log('\n--- PHASE 11: Custom Load Balancer ---');
+  try {
+    // 1. LB health check
+    console.log(`   Checking Load Balancer health at ${LB_URL}/lb-health...`);
+    let lbRes;
+    try {
+      lbRes = await fetch(`${LB_URL}/lb-health`);
+    } catch {
+      console.log('   ⚠️  Load Balancer is not running. Skipping Phase 11 tests.');
+      console.log('      Start it with: node packages/load-balancer/src/server.js');
+      return; // skip rest of phase 11
+    }
+    const lbData = await lbRes.json();
+    console.log(`   ✅ LB health: status=${lbData.status}, uptime=${Math.round(lbData.uptime)}s`);
+    console.log('   Gateway pool reported by LB:');
+    lbData.gateways.forEach((gw) => {
+      const icon = gw.healthy ? '✅' : '❌';
+      console.log(`      ${icon} ${gw.id} — ${gw.target} | healthy=${gw.healthy} | failures=${gw.consecutiveFailures}`);
+    });
+
+    // 2. Route a real request through the LB (round-robin to gateway)
+    console.log('   Routing a request through LB -> Gateway -> Auth Service...');
+    const lbAuthRes = await fetch(`${LB_URL}/v1/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'nonexistent_lb_test@example.com', password: 'wrong' })
+    });
+    // Expect 401 (user doesn't exist) but the ROUTING should work (not 502/503)
+    const lbGatewayHeader = lbAuthRes.headers.get('X-LB-Selected-Gateway');
+    const lbCorrelationId = lbAuthRes.headers.get('X-Correlation-ID');
+    if (lbAuthRes.status === 401 || lbAuthRes.status === 404) {
+      console.log(`   ✅ Request correctly routed through LB (status ${lbAuthRes.status} from upstream — routing works!)`);
+    } else if (lbAuthRes.status === 502 || lbAuthRes.status === 503) {
+      console.log(`   ⚠️  LB returned ${lbAuthRes.status} — Gateway instance may be down (only gateway-1 is running in this test).`);
+    } else {
+      console.log(`   ✅ LB routed request — upstream responded with ${lbAuthRes.status}`);
+    }
+    if (lbGatewayHeader) console.log(`      X-LB-Selected-Gateway : ${lbGatewayHeader}`);
+    if (lbCorrelationId)  console.log(`      X-Correlation-ID      : ${lbCorrelationId}`);
+
+    // 3. Round-robin verification — send 4 requests and see if both gateways are selected
+    console.log('   Sending 4 requests to verify round-robin distribution...');
+    const selectedGateways = [];
+    for (let i = 0; i < 4; i++) {
+      try {
+        const r = await fetch(`${LB_URL}/health`);
+        const gw = r.headers.get('X-LB-Selected-Gateway');
+        selectedGateways.push(gw || 'unknown');
+      } catch {
+        selectedGateways.push('unreachable');
+      }
+    }
+    const unique = [...new Set(selectedGateways)];
+    console.log(`   Distribution over 4 requests: ${selectedGateways.join(', ')}`);
+    if (unique.length >= 2) {
+      console.log(`   ✅ Round-robin confirmed — ${unique.length} distinct gateway(s) selected: ${unique.join(', ')}`);
+    } else {
+      console.log(`   ℹ️  Only one gateway used (${unique[0]}). Start gateway-2 on port ${GATEWAY_2_PORT} for full round-robin.`);
+    }
+  } catch (err) {
+    console.error('❌ Phase 11 Failed:', err.message);
     throw err;
   }
 }

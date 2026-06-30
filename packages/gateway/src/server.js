@@ -55,15 +55,23 @@ const { createRequestLogger } = require('../../../shared/middleware/requestLogge
 const { jwtAuth }          = require('./middleware/jwtAuth');
 const { rateLimiter }      = require('./middleware/rateLimiter');
 const { startHealthPoller, getHealthSnapshot } = require('./middleware/healthCheck');
-const { responseCache }    = require('./middleware/cacheMiddleware');
-const gatewayRoutes        = require('./routes/gatewayRoutes');
-const { errorHandler }     = require('./middleware/errorHandler');
+const { responseCache }       = require('./middleware/cacheMiddleware');
+const { analyticsCollector }  = require('./middleware/analyticsCollector');
+const gatewayRoutes           = require('./routes/gatewayRoutes');
+const analyticsRoutes         = require('./routes/analyticsRoutes');
+const { errorHandler }        = require('./middleware/errorHandler');
 
 const logger = createServiceLogger('gateway');
 const app    = express();
 
 // ── 1. Correlation ID ─────────────────────────────────────────────────────────
 app.use(correlationId);
+
+// ── 2a. Analytics Collector (Phase 10) ───────────────────────────────────────
+//    Registers a res.on('finish') listener so metrics are recorded after every
+//    response is sent. Must be placed early (before jwtAuth / rateLimiter)
+//    so that failed requests (429, 401) are also counted.
+app.use(analyticsCollector);
 
 // ── 2. Request Logger ─────────────────────────────────────────────────────────
 // Using the shared centralized request logger
@@ -100,6 +108,13 @@ app.get('/health', (req, res) => {
   });
 });
 
+// ── 7a. Analytics API (Phase 10) ──────────────────────────────────────────────
+//    Dashboard endpoints: /analytics/summary, /analytics/timeline,
+//    /analytics/endpoints, DELETE /analytics/reset
+//    Mounted BEFORE the proxy so requests to /analytics/* are served here
+//    and never forwarded downstream.
+app.use('/analytics', express.json({ limit: '10kb' }), analyticsRoutes);
+
 // ── 8. Proxy Routes ───────────────────────────────────────────────────────────
 app.use(gatewayRoutes);
 
@@ -128,7 +143,7 @@ async function start() {
     logger.info(
       `API Gateway [${process.env.GATEWAY_INSTANCE_ID || 'gateway-1'}] listening on port ${PORT}`
     );
-    logger.info('Middleware chain: correlationId → requestLogger → jwtAuth → rateLimiter → proxy');
+    logger.info('Middleware chain: correlationId → analyticsCollector → requestLogger → jwtAuth → rateLimiter → responseCache → proxy');
   });
 
   // ── Graceful Shutdown ──────────────────────────────────────────────────────

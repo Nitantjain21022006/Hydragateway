@@ -40,6 +40,7 @@ const PUBLIC_PREFIXES = [
   '/v1/auth/login',
   '/v1/auth/logout',
   '/health',
+  '/analytics', // Phase 10 – dashboard API is public (lock down via IP/admin scope in production)
 ];
 
 /**
