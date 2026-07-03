@@ -68,7 +68,9 @@
 
 'use strict';
 
+const path = require('path');
 require('dotenv').config();
+require('dotenv').config({ path: path.resolve(__dirname, '../../../.env') });
 
 const express = require('express');
 const { createProxyMiddleware } = require('http-proxy-middleware');
