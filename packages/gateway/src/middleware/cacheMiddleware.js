@@ -59,20 +59,33 @@ function responseCache(resource, keyGenerator) {
       logger.info(`[Cache] MISS: ${cacheKey}`, { correlationId: req.correlationId });
       res.setHeader('X-Cache', 'MISS');
 
-      // 2. Overwrite res.send to capture the response
-      const originalSend = res.send;
-      res.send = function(body) {
-        // Restore original send immediately
-        res.send = originalSend;
+      // 2. Overwrite res.write and res.end to capture proxy-streamed responses
+      const originalWrite = res.write;
+      const originalEnd = res.end;
+      const chunks = [];
 
-        // Only cache 200 OK responses
+      res.write = function(chunk, encoding, callback) {
+        if (chunk && typeof chunk !== 'function') {
+          const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk, typeof encoding === 'string' ? encoding : 'utf8');
+          chunks.push(buf);
+        }
+        return originalWrite.apply(res, arguments);
+      };
+
+      res.end = function(chunk, encoding, callback) {
+        if (chunk && typeof chunk !== 'function') {
+          const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk, typeof encoding === 'string' ? encoding : 'utf8');
+          chunks.push(buf);
+        }
+
+        // Cache only on 200 OK responses
         if (res.statusCode === 200) {
           try {
-            // We expect the body to be a string or Buffer for proxied JSON
-            const dataToCache = typeof body === 'string' ? body : JSON.stringify(body);
-            
+            const bodyBuffer = Buffer.concat(chunks);
+            const bodyString = bodyBuffer.toString('utf8');
+
             // Store in Redis asynchronously (don't block the response)
-            redis.set(cacheKey, dataToCache, 'EX', DEFAULT_TTL)
+            redis.set(cacheKey, bodyString, 'EX', DEFAULT_TTL)
               .then(() => logger.debug(`[Cache] Stored: ${cacheKey}`))
               .catch(err => logger.warn(`[Cache] Failed to store ${cacheKey}: ${err.message}`));
           } catch (err) {
@@ -80,7 +93,11 @@ function responseCache(resource, keyGenerator) {
           }
         }
 
-        return res.send(body);
+        // Restore original functions
+        res.write = originalWrite;
+        res.end = originalEnd;
+
+        return originalEnd.apply(res, arguments);
       };
 
       next();
