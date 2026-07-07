@@ -59,7 +59,7 @@ const { rateLimiter }      = require('./middleware/rateLimiter');
 const { startHealthPoller, getHealthSnapshot } = require('./middleware/healthCheck');
 const { responseCache }       = require('./middleware/cacheMiddleware');
 const { analyticsCollector }  = require('./middleware/analyticsCollector');
-const gatewayRoutes           = require('./routes/gatewayRoutes');
+const { router: gatewayRoutes, getCircuitBreakerSnapshot } = require('./routes/gatewayRoutes');
 const analyticsRoutes         = require('./routes/analyticsRoutes');
 const { errorHandler }        = require('./middleware/errorHandler');
 
@@ -97,8 +97,8 @@ app.get('/v1/products', responseCache('products', () => 'all'));
 app.get('/v1/products/:id', responseCache('products', (req) => req.params.id));
 
 // ── 7. Gateway /health endpoint ───────────────────────────────────────────────
-//    Reports the Gateway instance's own liveness and all downstream service
-//    health states in a single response.
+//    Reports the Gateway instance's own liveness, all downstream service
+//    health states, and circuit breaker statuses in a single response.
 app.get('/health', (req, res) => {
   res.json({
     status: 'ok',
@@ -107,6 +107,7 @@ app.get('/health', (req, res) => {
     uptime: process.uptime(),
     timestamp: new Date().toISOString(),
     downstream: getHealthSnapshot(),
+    circuitBreakers: getCircuitBreakerSnapshot(),
   });
 });
 

@@ -9,11 +9,16 @@ const axios = require('axios');
 const Order = require('../models/Order');
 const { AppError } = require('../../../../shared/utils/errorResponse');
 const { createServiceLogger } = require('../../../../shared/utils/logger');
+const { CircuitBreaker } = require('../../../../shared/utils/circuitBreaker');
 
 const logger = createServiceLogger('order-service');
 
 const PRODUCT_SERVICE_URL = process.env.PRODUCT_SERVICE_URL || 'http://localhost:4002';
 const PAYMENT_SERVICE_URL = process.env.PAYMENT_SERVICE_URL || 'http://localhost:4003';
+
+// ── Instantiate Circuit Breakers ──────────────────────────────────────────────
+const paymentCircuitBreaker = new CircuitBreaker({ name: 'payment-service' });
+const productCircuitBreaker = new CircuitBreaker({ name: 'product-service' });
 
 class OrderService {
   /**
@@ -30,7 +35,9 @@ class OrderService {
 
     for (const item of items) {
       try {
-        const response = await axios.get(`${PRODUCT_SERVICE_URL}/v1/products/${item.productId}`);
+        const response = await productCircuitBreaker.fire(async () => {
+          return await axios.get(`${PRODUCT_SERVICE_URL}/v1/products/${item.productId}`);
+        });
         const product = response.data.data.product;
 
         if (!product || !product.isActive) {
@@ -69,11 +76,13 @@ class OrderService {
     // 3. Initiate Payment
     try {
       logger.info(`Initiating payment for Order: ${order.id} via ${paymentMethod}`);
-      const paymentResponse = await axios.post(`${PAYMENT_SERVICE_URL}/v1/payments`, {
-        userId,
-        amount: totalAmount,
-        paymentMethod,
-        orderId: order.id,
+      const paymentResponse = await paymentCircuitBreaker.fire(async () => {
+        return await axios.post(`${PAYMENT_SERVICE_URL}/v1/payments`, {
+          userId,
+          amount: totalAmount,
+          paymentMethod,
+          orderId: order.id,
+        });
       });
 
       const payment = paymentResponse.data.data.payment;
@@ -87,7 +96,10 @@ class OrderService {
         logger.warn(`Order ${order.id} payment FAILED`);
       }
     } catch (err) {
-      logger.error(`Payment initiation failed for Order ${order.id}: ${err.message}`);
+      logger.error(`Payment initiation failed for Order ${order.id}: ${err.message}`, {
+        code: err.code,
+        status: err.status,
+      });
       order.status = 'FAILED';
     }
 

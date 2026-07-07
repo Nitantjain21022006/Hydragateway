@@ -38,47 +38,58 @@ const { createProxyMiddleware } = require('http-proxy-middleware');
 const { getRegistry } = require('../config/serviceRegistry');
 const { isServiceHealthy } = require('../middleware/healthCheck');
 const { createServiceLogger } = require('../../../../shared/utils/logger');
+const { CircuitBreaker } = require('../../../../shared/utils/circuitBreaker');
 
 const logger = createServiceLogger('gateway-proxy');
 const router = express.Router();
 
+// ── Instantiate Circuit Breakers for all services ─────────────────────────────
+const breakers = {};
+const registry = getRegistry();
+
+registry.forEach((svc) => {
+  breakers[svc.name] = new CircuitBreaker({ name: svc.name });
+});
+
 /**
- * proxyErrorHandler – called by http-proxy-middleware when the upstream
- * TCP connection fails. Converts network errors into JSON API responses
- * consistent with our error envelope.
+ * getCircuitBreakerSnapshot – returns status snapshot of all circuit breakers.
  */
-function proxyErrorHandler(err, req, res) {
-  const correlationId = req.correlationId || '-';
-
-  logger.error(`[Proxy] Upstream error: ${err.message}`, {
-    correlationId,
-    code: err.code,
-    path: req.path,
+function getCircuitBreakerSnapshot() {
+  const snapshot = {};
+  Object.keys(breakers).forEach((key) => {
+    snapshot[key] = breakers[key].toJSON();
   });
-
-  // Determine appropriate HTTP status
-  let statusCode = 502; // Bad Gateway (default for unreachable upstream)
-  if (err.code === 'ETIMEDOUT' || err.code === 'ESOCKETTIMEDOUT') {
-    statusCode = 504; // Gateway Timeout
-  }
-
-  if (!res.headersSent) {
-    res.status(statusCode).json({
-      success: false,
-      error: {
-        code: statusCode === 504 ? 'UPSTREAM_TIMEOUT' : 'UPSTREAM_ERROR',
-        message: 'The requested service is temporarily unavailable.',
-      },
-    });
-  }
+  return snapshot;
 }
 
 // ── Mount a proxy for every service in the registry ──────────────────────────
 
-const registry = getRegistry();
-
 registry.forEach((svc) => {
-  logger.info(`[GatewayRoutes] Mounting proxy: ${svc.pathPrefix} → ${svc.target}`);
+  logger.info(`[GatewayRoutes] Mounting proxy and circuit breaker: ${svc.pathPrefix} → ${svc.target}`);
+
+  const cb = breakers[svc.name];
+
+  // Circuit Breaker Guard Middleware
+  const cbGuard = (req, res, next) => {
+    if (cb.state === 'OPEN') {
+      if (Date.now() < cb._nextAttemptTime) {
+        logger.warn(`[CircuitBreaker] Service [${svc.name}] circuit is OPEN – rejecting request`, {
+          correlationId: req.correlationId,
+          path: req.path,
+        });
+        return res.status(503).json({
+          success: false,
+          error: {
+            code: 'CIRCUIT_OPEN',
+            message: `${svc.name} is temporarily unavailable (circuit open). Please try again later.`,
+          },
+        });
+      }
+      // Cooldown elapsed, allow probe (transitions to HALF_OPEN)
+      cb._transition('HALF_OPEN');
+    }
+    return next();
+  };
 
   // Pre-flight health guard
   const healthGuard = (req, res, next) => {
@@ -102,7 +113,9 @@ registry.forEach((svc) => {
   const proxy = createProxyMiddleware({
     target: svc.target + svc.pathPrefix,
     changeOrigin: true,
-    // Inject gateway-level headers before forwarding
+    // Connect & read timeouts (in ms) mapped from circuit breaker config
+    timeout: cb.requestTimeout,
+    proxyTimeout: cb.requestTimeout,
     on: {
       proxyReq: (proxyReq, req) => {
         // Internal auth header so the downstream service trusts this request
@@ -133,12 +146,53 @@ registry.forEach((svc) => {
           { correlationId: req.correlationId }
         );
       },
-      error: proxyErrorHandler,
+      error: (err, req, res) => {
+        logger.error(`[Proxy] Upstream error for ${svc.name}: ${err.message}`, {
+          correlationId: req.correlationId,
+          code: err.code,
+          path: req.path,
+        });
+
+        // Record failure in Circuit Breaker
+        cb._onFailure(err);
+
+        // Determine appropriate HTTP status
+        let statusCode = 502; // Bad Gateway (default for unreachable upstream)
+        if (err.code === 'ETIMEDOUT' || err.code === 'ESOCKETTIMEDOUT' || err.code === 'ECONNRESET') {
+          statusCode = 504; // Gateway Timeout
+        }
+
+        if (!res.headersSent) {
+          res.status(statusCode).json({
+            success: false,
+            error: {
+              code: statusCode === 504 ? 'UPSTREAM_TIMEOUT' : 'UPSTREAM_ERROR',
+              message: 'The requested service is temporarily unavailable.',
+            },
+          });
+        }
+      },
+      proxyRes: (proxyRes, req, res) => {
+        // Intercept 5xx status codes as service failures
+        if (proxyRes.statusCode >= 500) {
+          logger.warn(`[Proxy] Downstream service ${svc.name} returned 5xx status: ${proxyRes.statusCode}`, {
+            correlationId: req.correlationId,
+            path: req.path,
+          });
+          const statusError = new Error(`Service returned ${proxyRes.statusCode}`);
+          statusError.response = { status: proxyRes.statusCode };
+          cb._onFailure(statusError);
+        } else {
+          // Success (includes 2xx, 3xx, 4xx)
+          cb._onSuccess();
+        }
+      }
     },
   });
 
-  // Mount: healthGuard then proxy
-  router.use(svc.pathPrefix, healthGuard, proxy);
+  // Mount: cbGuard -> healthGuard -> proxy
+  router.use(svc.pathPrefix, cbGuard, healthGuard, proxy);
 });
 
-module.exports = router;
+module.exports = { router, getCircuitBreakerSnapshot };
+
