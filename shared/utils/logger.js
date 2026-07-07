@@ -16,7 +16,10 @@ const path = require('path');
 const fs = require('fs');
 
 function createServiceLogger(serviceName) {
-  const logDir = process.env.LOG_DIR || 'logs';
+  // Resolve log directory relative to this file (shared/utils/logger.js)
+  // so all services write to the same central <project_root>/logs/ folder,
+  // regardless of each service's working directory.
+  const logDir = process.env.LOG_DIR || path.join(__dirname, '..', '..', 'logs');
 
   // Ensure log directory exists (services call this at boot)
   if (!fs.existsSync(logDir)) {
@@ -51,19 +54,19 @@ function createServiceLogger(serviceName) {
     }),
   ];
 
-  if (isProd) {
-    transportList.push(
-      new transports.File({
-        filename: path.join(logDir, `${serviceName}-error.log`),
-        level: 'error',
-        format: format.combine(baseFormat, format.json()),
-      }),
-      new transports.File({
-        filename: path.join(logDir, `${serviceName}-combined.log`),
-        format: format.combine(baseFormat, format.json()),
-      })
-    );
-  }
+  // Always write to log files (dev: plain text, prod: JSON)
+  // This ensures the logs/ directory is always populated for inspection.
+  transportList.push(
+    new transports.File({
+      filename: path.join(logDir, `${serviceName}-error.log`),
+      level: 'error',
+      format: format.combine(baseFormat, format.json()),
+    }),
+    new transports.File({
+      filename: path.join(logDir, `${serviceName}-combined.log`),
+      format: format.combine(baseFormat, format.json()),
+    })
+  );
 
   return createLogger({
     level: process.env.LOG_LEVEL || 'info',

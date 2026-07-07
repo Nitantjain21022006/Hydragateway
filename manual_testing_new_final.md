@@ -48,15 +48,35 @@ Immediately send the exact same request again.
 
 ---
 
-## 3. Phase 9: Centralized Logging
+## 3. Phase 9: Centralized Distributed Logging
 
-We standardized logging with Winston & Morgan. You don't test this via API, but by inspecting the filesystem.
+We standardized logging with Winston & Morgan. Every request generates structured JSON log entries that are written to a central `logs/` directory in the project root. You don't test this via API — you verify it by inspecting the filesystem after making a few requests.
+
+> **Note**: Log files are now always written regardless of `NODE_ENV`. Prior to the fix, file logging was gated behind `NODE_ENV=production`, so the `logs/` folder appeared empty in development mode. This has been corrected.
 
 **Steps**:
-1. Open the `logs/` directory in the project root.
-2. Open `gateway-combined.log` and `auth-combined.log`.
-3. Check the log structure. You should see structured JSON.
-4. Note the `correlationId`. The same UUID generated at the Gateway will appear in the downstream service's logs for the exact same request.
+1. Ensure all services are running (auth, product, gateway — from earlier phases).
+2. Make any request through the gateway, e.g.:
+   ```
+   GET http://localhost:3000/v1/products
+   ```
+3. Open the `logs/` directory in the **project root** (`c:\Users\admin\Desktop\Projects\ProjectSec\logs\`).
+4. You should now see log files like:
+   - `gateway-combined.log`
+   - `auth-service-combined.log`
+   - `product-service-combined.log`
+5. Open `gateway-combined.log`. You will see structured JSON lines like:
+   ```json
+   { "timestamp": "2026-07-08 01:30:12", "service": "gateway", "level": "info", "message": "GET /v1/products 200 4ms", "correlationId": "abc-123-xyz" }
+   ```
+6. Copy the `correlationId` value from a gateway log entry.
+7. Open `product-service-combined.log` and search (Ctrl+F) for that same `correlationId`.
+8. You should find the **identical UUID** in the product service log, proving that the request was traced end-to-end across two services.
+
+**Expected**:
+- A `logs/` folder in the project root with one `.log` file per service.
+- JSON structured entries with `timestamp`, `service`, `level`, `message`, and `correlationId`.
+- The same `correlationId` appearing in both `gateway-combined.log` and `product-service-combined.log` for the same request.
 
 ---
 
