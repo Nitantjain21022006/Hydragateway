@@ -13,58 +13,58 @@
 
 ---
 
-## 📖 Overview
+## 📖 1. Overview
 
-**HydraGateway** is a high-performance, highly available, and resilient API Gateway & Microservices ecosystem built with **Node.js**. Designed for scale and fault tolerance, it showcases industry-standard distributed systems patterns.
+**HydraGateway** is a high-performance, resilient, and production-grade API Gateway & Microservices ecosystem built with **Node.js**. Designed for scale and fault tolerance, it showcases industry-standard distributed systems patterns.
 
-The platform handles everything from dynamic request routing and distributed tracing to atomic rate-limiting, centralized structured logging, and robust Circuit Breaker failure management. 
+The platform handles everything from dynamic request routing and distributed tracing to atomic rate-limiting, centralized structured logging, and robust Circuit Breaker failure management. It acts as the backbone for an e-commerce platform, coordinating Authentication, Products, Orders, and Payments.
 
 ---
 
-## 🏗️ System Architecture
+## 🏗️ 2. System Architecture
 
 Our architecture ensures zero single points of failure, leveraging a custom Layer 7 load balancer, an active/active API gateway tier, and isolated microservices.
 
 ```mermaid
 graph TD
     %% Client Layer
-    Client([🌐 Client / Frontend]) -->|HTTP Requests| LB[⚖️ Custom Load Balancer :8080]
+    Client["🌐 Client / Frontend"] -->|HTTP Requests| LB["⚖️ Custom Load Balancer (Port 8080)"]
     
     %% Gateway Tier
-    subgraph Gateway Tier [Edge Network]
-        LB -.->|Active Health Polling & Round-Robin| GW1(🛡️ API Gateway Node 1 :3000)
-        LB -.->|Active Health Polling & Round-Robin| GW2(🛡️ API Gateway Node 2 :3001)
+    subgraph Gateway Tier ["Edge Network"]
+        LB -.->|"Health Polling & Round-Robin"| GW1["🛡️ API Gateway 1 (Port 3000)"]
+        LB -.->|"Health Polling & Round-Robin"| GW2["🛡️ API Gateway 2 (Port 3001)"]
     end
     
     %% Middleware Pipeline
-    subgraph Middleware Pipeline [Gateway Internals]
-        GW1 --> Corr[Trace ID Injection]
-        Corr --> Anal[Async Analytics Collector]
-        Anal --> Auth[Stateless JWT Auth]
-        Auth --> Rate[Redis Rate Limiter]
-        Rate --> Cache[Redis Response Cache]
+    subgraph Middleware Pipeline ["Gateway Internals"]
+        GW1 --> Corr["Trace ID Injection"]
+        Corr --> Anal["Async Analytics Collector"]
+        Anal --> Auth["Stateless JWT Auth"]
+        Auth --> Rate["Redis Rate Limiter"]
+        Rate --> Cache["Redis Response Cache"]
     end
 
     %% Microservices Tier
-    subgraph Microservices Tier [Internal Network]
-        Cache -->|Context Propagation| AuthSvc(🔐 Auth Service :4001)
-        Cache -->|Context Propagation| ProdSvc(📦 Product Service :4002)
-        Cache -->|Context Propagation| PaySvc(💳 Payment Service :4003)
-        Cache -->|Context Propagation| OrdSvc(🛒 Order Service :4004)
+    subgraph Microservices Tier ["Internal Network"]
+        Cache -->|"Context Propagation"| AuthSvc["🔐 Auth Service (Port 4001)"]
+        Cache -->|"Context Propagation"| ProdSvc["📦 Product Service (Port 4002)"]
+        Cache -->|"Context Propagation"| PaySvc["💳 Payment Service (Port 4003)"]
+        Cache -->|"Context Propagation"| OrdSvc["🛒 Order Service (Port 4004)"]
         
-        OrdSvc -->|Circuit Breaker (Fail-Fast)| ProdSvc
-        OrdSvc -->|Circuit Breaker (Fail-Fast)| PaySvc
+        OrdSvc -->|"Circuit Breaker (Fail-Fast)"| ProdSvc
+        OrdSvc -->|"Circuit Breaker (Fail-Fast)"| PaySvc
     end
 
     %% Persistence Tier
-    subgraph Persistence Tier [Data & State]
-        AuthSvc & ProdSvc & PaySvc & OrdSvc ===> Mongo[(🍃 MongoDB Atlas)]
-        Anal & Rate & Cache ===> Redis[(🔴 Redis Cluster)]
+    subgraph Persistence Tier ["Data & State"]
+        AuthSvc & ProdSvc & PaySvc & OrdSvc ===> Mongo[/"🍃 MongoDB Atlas"/]
+        Anal & Rate & Cache ===> Redis[/"🔴 Redis Cluster"/]
     end
 
     %% Monitoring Dashboard
-    subgraph Monitoring [Observability]
-        Dash[📈 React Monitoring Dashboard] -.->|Fetches Metrics| GW1
+    subgraph Monitoring ["Observability"]
+        Dash["📈 React Dashboard (Port 5173)"] -.->|"Fetches Metrics"| GW1
     end
 
     %% Styling
@@ -83,64 +83,95 @@ graph TD
     class Dash dash;
 ```
 
----
-
-## ✨ Enterprise Features
-
-- **Custom Application Load Balancer**: A Node.js Layer 7 Load Balancer featuring Round-Robin distribution, active background health polling (`/health`), and automated failover when gateway instances drop.
-- **Circuit Breaker Pattern**: Internal state machines (`CLOSED` ⇄ `OPEN` ⇄ `HALF_OPEN`) wrap critical service-to-service calls (e.g., Order ➔ Payment) to prevent cascading failures, thread pool exhaustion, and latency spikes. Includes retry logic for transient errors.
-- **Zero-Latency Analytics**: Middleware utilizing the `res.on('finish')` event hook and Redis pipelining (`INCR`) to capture traffic metrics asynchronously, without delaying the client response.
-- **Monitoring Dashboard**: A standalone React/Vite Single Page Application (SPA) utilizing Tailwind CSS and Recharts to visualize live system health, API latency, and traffic volume.
-- **Centralized Distributed Logging**: Unified `Winston` and `Morgan` logging. Every request receives a globally unique `X-Correlation-ID` allowing seamless request tracing across all internal microservice hops.
-- **Redis Response Caching**: Accelerates heavy read operations (e.g., Product Catalogs) via Gateway-level caching with automatic write-through cache busting handled by the origin services.
-- **Security & Rate Limiting**: Distributed rate limiting backed by Redis, and stateless JWT authentication with context propagation (stripping tokens and injecting `X-User-Id` headers).
+*(Note: The diagram above uses strictly quoted labels to ensure perfect rendering across all Markdown platforms).*
 
 ---
 
-## 🗂️ Monorepo Structure
+## 🗺️ 3. Port Mapping & Service Registry
 
-The repository is built as an npm workspace monorepo, keeping boundaries strict while allowing shared infrastructure code.
+To run the full stack locally, the system spans multiple ports. The network is logically segmented into public-facing ingress and private internal services.
+
+| Component | Port | Network Exposure | Primary Responsibility |
+| :--- | :--- | :--- | :--- |
+| **React Dashboard** | `5173` | Public | Visualizes real-time metrics and system health. |
+| **Load Balancer** | `8080` | Public | Entry point. Routes traffic across Gateway instances using Round-Robin. |
+| **API Gateway 1** | `3000` | Private (VPC) | Reverse proxy, Authentication, Rate Limiting, Response Caching. |
+| **API Gateway 2** | `3001` | Private (VPC) | Redundant gateway instance for failover testing. |
+| **Auth Service** | `4001` | Private (VPC) | JWT Issuance, User Registration, Password Hashing. |
+| **Product Service** | `4002` | Private (VPC) | Inventory management and catalog CRUD operations. |
+| **Payment Service** | `4003` | Private (VPC) | Mock payment processing (simulates failures & latency). |
+| **Order Service** | `4004` | Private (VPC) | Transactional orchestrator. Communicates with Product/Payment services. |
+| **Redis Server** | `6379` | Internal | In-memory datastore for Rate Limiting, Analytics, and Caching. |
+| **MongoDB** | `27017` | Internal | Persistent data storage for all microservices. |
+
+---
+
+## ✨ 4. Enterprise System Features
+
+### ⚖️ Custom Layer 7 Load Balancer (Phase 11)
+A Node.js L7 Load Balancer built from scratch. It utilizes a **Round-Robin distribution algorithm**, maintains an in-memory pointer, and performs active background health polling (`GET /health`) against Gateway targets every 10 seconds. If a gateway drops offline, the LB performs **automated failover** without dropping client requests.
+
+### 🛡️ Circuit Breaker Resilience (Phase 12)
+Internal state machines (`CLOSED` ⇄ `OPEN` ⇄ `HALF_OPEN`) wrap critical service-to-service calls (e.g., Order ➔ Payment) to prevent cascading failures. If the Payment service goes down, the Circuit Breaker trips instantly (Fail-Fast), preventing thread pool exhaustion. It includes a cooldown period and probe requests for self-healing, as well as a retry loop for transient network glitches.
+
+### 📊 Zero-Latency Analytics (Phase 10)
+Instead of writing to a database on every request, the Gateway utilizes the `res.on('finish')` event hook and Redis pipelining (`INCR`) to capture traffic metrics asynchronously. This guarantees that analytics collection adds **zero latency** to the client's HTTP response. 
+
+### 📈 React Monitoring Dashboard (Phase 13)
+A standalone Single Page Application (SPA) built with React, Vite, Tailwind CSS, and Recharts. It queries the Gateway's analytics API to visualize live system health, API latency, traffic volumes, and a top-endpoints leaderboard.
+
+### 🧩 Distributed Logging & Tracing (Phase 9)
+Unified structured logging via `Winston` and `Morgan`. Every ingress request receives a globally unique `X-Correlation-ID`. This ID is injected into HTTP headers and propagated across all internal microservice hops, allowing seamless, unified request tracing in tools like ELK/Datadog.
+
+### 🚀 Redis Response Caching (Phase 8)
+Accelerates heavy read operations via Gateway-level caching. `GET` requests (e.g., `/v1/products`) are cached in Redis. The origin microservices handle **write-through cache busting**—when a product is updated, the Product Service issues a `DEL` command to Redis to ensure clients immediately see fresh data.
+
+### 🔐 Security, Context Propagation & Rate Limiting
+Distributed rate limiting backed by Redis protects against DDoS. Stateless JWT authentication occurs at the edge (Gateway). The Gateway strips the token, decodes it, and injects `X-User-Id` and `X-User-Role` headers into the proxy stream. Downstream services remain completely stateless and securely trust the internal headers.
+
+---
+
+## 🗂️ 5. Monorepo Project Structure
+
+The repository is built as an npm workspace monorepo, keeping boundaries strict while sharing core utilities.
 
 ```text
 HydraGateway/
 ├── packages/
-│   ├── load-balancer/      # L7 Router & Health Poller (:8080)
-│   ├── gateway/            # API Gateway & Middleware pipeline (:3000/:3001)
-│   ├── auth-service/       # Identity, Registration & JWT issuer (:4001)
-│   ├── product-service/    # Product catalog with cache invalidation (:4002)
-│   ├── payment-service/    # Payment processor (with simulated latency/faults) (:4003)
-│   ├── order-service/      # Order orchestrator utilizing Circuit Breakers (:4004)
-│   └── dashboard/          # React SPA for live metrics and monitoring (:5173)
+│   ├── load-balancer/      # L7 Router & Health Poller
+│   ├── gateway/            # API Gateway & Middleware pipeline
+│   ├── auth-service/       # Identity, Registration & JWT issuer
+│   ├── product-service/    # Product catalog with cache invalidation
+│   ├── payment-service/    # Payment processor (with simulated latency/faults)
+│   ├── order-service/      # Order orchestrator utilizing Circuit Breakers
+│   └── dashboard/          # React SPA for live metrics and monitoring
 │
 ├── shared/                 # Core utilities shared dynamically
 │   ├── config/             # Connection pooling for MongoDB & Redis
 │   ├── middleware/         # Trace ID injection & Internal Auth guards
 │   └── utils/              # Winston loggers, Error formats, Circuit Breaker FSM
 │
-├── test-flow.js            # Automated E2E integration test suite
 ├── test-cb-flow.js         # Automated Circuit Breaker resilience tests
-└── .env.example            # Environment variables template
+└── README.md               # This documentation file
 ```
 
 ---
 
-## 🚀 Getting Started
+## 🚀 6. Getting Started
 
 ### Prerequisites
 - **Node.js** (v18+)
-- **MongoDB** (Local or Atlas)
+- **MongoDB** (Local on `27017` or Atlas URI)
 - **Redis** (Local instance on `6379`)
 
 ### 1. Installation
 Clone the repository and install all workspace dependencies:
 ```bash
-git clone https://github.com/your-org/hydragateway.git
-cd hydragateway
 npm install
 ```
 
 ### 2. Configuration
-Copy the environment template and configure your database URIs:
+Copy the environment template:
 ```bash
 cp .env.example .env
 ```
@@ -148,14 +179,14 @@ Ensure `MONGO_URI` and `REDIS_HOST` point to your running database instances.
 
 ### 3. Launching the Ecosystem
 
-**Option A: Automated Start & Test (Recommended for CI/CD)**
-Run the automated End-to-End suite which spins up all services, runs integration tests, validates caching and circuit breakers, and safely tears down the environment.
+**Option A: Automated Resilience Test (Recommended)**
+Run the automated test suite. It spins up all services, simulates a Payment Service outage, proves the Circuit Breaker trips and recovers, and then shuts down gracefully.
 ```bash
-node test-flow.js
+node test-cb-flow.js
 ```
 
 **Option B: Manual Execution**
-To run the system interactively, start the services in separate terminal sessions:
+To run the system interactively, start the services in separate terminal sessions (or background processes):
 ```bash
 # 1. Start internal microservices
 npm run dev:auth
@@ -164,6 +195,7 @@ npm run dev:payment
 npm run dev:order
 
 # 2. Start API Gateway (Run 2 instances for LB failover testing)
+# (Windows PowerShell syntax shown below)
 $env:GATEWAY_PORT=3000; $env:GATEWAY_INSTANCE_ID="gateway-1"; npm run dev:gateway
 $env:GATEWAY_PORT=3001; $env:GATEWAY_INSTANCE_ID="gateway-2"; npm run dev:gateway
 
@@ -176,27 +208,23 @@ npm run dev:dashboard
 
 ---
 
-## 🔬 Observability & Validation
+## 🔬 7. Observability & Validation
 
-Once the system is running, you can validate the architecture:
+Once the system is running, you can easily validate the architecture:
 
 ### 1. View the Monitoring Dashboard
-Open `http://localhost:5173` in your browser to view real-time traffic, latency charts, and live microservice health statuses.
+Open `http://localhost:5173` in your browser. Send API traffic through Postman and watch the live traffic charts and response time metrics update automatically.
 
-### 2. Test the Load Balancer
-Direct all traffic to `http://localhost:8080`.
-```bash
-curl http://localhost:8080/lb-health
-```
-*(Check the `X-LB-Selected-Gateway` response header on subsequent requests to see traffic alternating between Gateway instances).*
+### 2. Test the Load Balancer Failover
+Direct all traffic to `http://localhost:8080/health`. Check the `X-LB-Selected-Gateway` response header. It will alternate between `gateway-1` and `gateway-2`. 
+Kill the `gateway-2` process in your terminal, wait 10 seconds, and watch the load balancer automatically route 100% of traffic to `gateway-1` without dropping requests.
 
-### 3. Distributed Tracing
-Open `logs/gateway-combined.log` and `logs/order-combined.log`. Track any request end-to-end by filtering for its unique `correlationId`.
+### 3. Trace a Request
+Open `logs/gateway-combined.log` and `logs/order-combined.log`. You will see identical `correlationId` UUIDs linking the gateway's ingress log to the downstream service's execution log, demonstrating true distributed tracing.
 
 ---
 
 ## 👥 Authors & License
 
 Developed and maintained by **Team Vision21**.
-
-This project is licensed under the MIT License - see the LICENSE file for details.
+This project is an advanced demonstration of modern backend architectures, microservice orchestration, and system reliability engineering.
