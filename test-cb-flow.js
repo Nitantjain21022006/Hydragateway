@@ -76,7 +76,7 @@ let logStream;
 
 function logMessage(msg) {
   console.log(msg);
-  if (logStream) logStream.write(`${msg}\n`);
+  if (logStream && !logStream.destroyed && logStream.writable) logStream.write(`${msg}\n`);
 }
 
 async function checkPrerequisites() {
@@ -119,11 +119,11 @@ function startService(svc) {
   });
 
   proc.stdout.on('data', (data) => {
-    if (logStream) logStream.write(`[${svc.name}] ${data}`);
+    if (logStream && !logStream.destroyed && logStream.writable) logStream.write(`[${svc.name}] ${data}`);
   });
 
   proc.stderr.on('data', (data) => {
-    if (logStream) logStream.write(`[${svc.name} ERROR] ${data}`);
+    if (logStream && !logStream.destroyed && logStream.writable) logStream.write(`[${svc.name} ERROR] ${data}`);
   });
 
   runningProcesses[svc.name] = proc;
@@ -318,10 +318,6 @@ async function runTestFlow() {
   // 4. Stop the Payment Service
   logMessage('\n--- STEP 3: Stop Payment Service to simulate outage ---');
   await stopService('payment-service');
-
-  // Let gateway register that health check for payment-service is DOWN
-  logMessage('⏳ Letting health check update...');
-  await new Promise((resolve) => setTimeout(resolve, 3000));
 
   // 5. Trip the Gateway Payment Service Circuit Breaker
   logMessage('\n--- STEP 4: Trip the Gateway Circuit Breaker to OPEN ---');
