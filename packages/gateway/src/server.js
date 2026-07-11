@@ -59,6 +59,10 @@ const { rateLimiter }      = require('./middleware/rateLimiter');
 const { startHealthPoller, getHealthSnapshot } = require('./middleware/healthCheck');
 const { responseCache }       = require('./middleware/cacheMiddleware');
 const { analyticsCollector }  = require('./middleware/analyticsCollector');
+// gatewayRoutes must be imported BEFORE analyticsRoutes because
+// analyticsRoutes requires getCircuitBreakerSnapshot from gatewayRoutes.
+// analyticsCollector is imported first (no deps), then gatewayRoutes (imports analyticsCollector),
+// then analyticsRoutes (imports both).
 const { router: gatewayRoutes, getCircuitBreakerSnapshot } = require('./routes/gatewayRoutes');
 const analyticsRoutes         = require('./routes/analyticsRoutes');
 const { errorHandler }        = require('./middleware/errorHandler');
@@ -68,6 +72,19 @@ const app    = express();
 
 // ── 1. Correlation ID ─────────────────────────────────────────────────────────
 app.use(correlationId);
+
+// ── CORS Middleware (Phase 11 Dashboard Integration) ─────────────────────────
+app.use((req, res, next) => {
+  res.setHeader('Access-Control-Allow-Origin', req.headers.origin || '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Correlation-ID, X-User-Id, X-User-Role');
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
+  next();
+});
 
 // ── 2a. Analytics Collector (Phase 10) ───────────────────────────────────────
 //    Registers a res.on('finish') listener so metrics are recorded after every

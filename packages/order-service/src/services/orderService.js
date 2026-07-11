@@ -142,6 +142,13 @@ class OrderService {
     logger.info(`Order ${orderId} status updated to ${status}`);
     return order;
   }
+
+  /**
+   * Get all orders
+   */
+  async getAllOrders() {
+    return await Order.find().sort('-createdAt');
+  }
 }
 
 module.exports = new OrderService();

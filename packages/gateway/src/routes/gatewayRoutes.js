@@ -39,6 +39,7 @@ const { getRegistry } = require('../config/serviceRegistry');
 const { isServiceHealthy } = require('../middleware/healthCheck');
 const { createServiceLogger } = require('../../../../shared/utils/logger');
 const { CircuitBreaker } = require('../../../../shared/utils/circuitBreaker');
+const { requestEventBus } = require('../middleware/analyticsCollector');
 
 const logger = createServiceLogger('gateway-proxy');
 const router = express.Router();
@@ -48,7 +49,18 @@ const breakers = {};
 const registry = getRegistry();
 
 registry.forEach((svc) => {
-  breakers[svc.name] = new CircuitBreaker({ name: svc.name });
+  breakers[svc.name] = new CircuitBreaker({
+    name: svc.name,
+    // Phase 14: Broadcast state changes to SSE clients in real-time
+    onStateChange: (name, newState, prevState) => {
+      requestEventBus.emit('circuit_breaker', {
+        service:   name,
+        state:     newState,
+        prevState,
+        timestamp: new Date().toISOString(),
+      });
+    },
+  });
 });
 
 /**
@@ -91,13 +103,29 @@ registry.forEach((svc) => {
     return next();
   };
 
-  // Pre-flight health guard
+  // Pre-flight health guard — if the poller already knows the service is DOWN,
+  // record that as a circuit breaker failure (so the CB can trip to OPEN) and
+  // reject immediately without touching the network.
+  // EXCEPTION: when the CB is in HALF_OPEN (probe mode), we skip this guard
+  // so the probe request can actually reach the service to validate recovery.
   const healthGuard = (req, res, next) => {
+    // Let HALF_OPEN probes bypass the health guard — the CB itself will record
+    // success or failure based on the actual response from the service.
+    if (cb.state === 'HALF_OPEN') {
+      return next();
+    }
+
     if (!isServiceHealthy(svc.name)) {
-      logger.warn(`[Proxy] ${svc.name} is DOWN – rejecting request`, {
+      logger.warn(`[Proxy] ${svc.name} is DOWN – recording CB failure and rejecting request`, {
         correlationId: req.correlationId,
         path: req.path,
       });
+
+      // Feed this failure into the circuit breaker so it can trip CLOSED → OPEN
+      const connErr = new Error(`${svc.name} is DOWN (health check)`);
+      // No .response property → treated as a network/transient error by _onFailure
+      cb._onFailure(connErr);
+
       return res.status(503).json({
         success: false,
         error: {

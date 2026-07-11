@@ -56,6 +56,18 @@ class OrderController {
       next(err);
     }
   }
+
+  /**
+   * GET /v1/orders
+   */
+  async getAllOrders(req, res, next) {
+    try {
+      const orders = await orderService.getAllOrders();
+      sendSuccess(res, orders, 200, 'Orders retrieved successfully');
+    } catch (err) {
+      next(err);
+    }
+  }
 }
 
 module.exports = new OrderController();

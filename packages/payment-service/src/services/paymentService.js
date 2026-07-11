@@ -63,6 +63,13 @@ class PaymentService {
     }
     return payment;
   }
+
+  /**
+   * Get all payments
+   */
+  async getAllPayments() {
+    return await Payment.find().sort('-createdAt');
+  }
 }
 
 module.exports = new PaymentService();

@@ -92,6 +92,19 @@ app.use((req, res, next) => {
   next();
 });
 
+// ── CORS Middleware (Phase 11 Dashboard Integration) ─────────────────────────
+app.use((req, res, next) => {
+  res.setHeader('Access-Control-Allow-Origin', req.headers.origin || '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Correlation-ID, X-User-Id, X-User-Role');
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
+  next();
+});
+
 // ── 2. Request Logger ─────────────────────────────────────────────────────────
 app.use((req, res, next) => {
   const startAt = Date.now();

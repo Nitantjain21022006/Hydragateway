@@ -42,8 +42,18 @@ const getStatus = asyncHandler(async (req, res) => {
   });
 });
 
+/**
+ * GET /v1/payments
+ * Retrieve all payments
+ */
+const getAllPayments = asyncHandler(async (req, res) => {
+  const payments = await paymentService.getAllPayments();
+  sendSuccess(res, { payments });
+});
+
 module.exports = {
   initiatePayment,
   getHistory,
-  getStatus
+  getStatus,
+  getAllPayments
 };

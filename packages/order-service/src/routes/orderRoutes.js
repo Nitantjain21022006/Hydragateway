@@ -38,4 +38,10 @@ router.patch(
   orderController.updateStatus
 );
 
+// Get all orders
+router.get(
+  '/',
+  orderController.getAllOrders
+);
+
 module.exports = router;

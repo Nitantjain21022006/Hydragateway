@@ -43,4 +43,14 @@ router.get(
   paymentController.getStatus
 );
 
+/**
+ * @route   GET /v1/payments
+ * @desc    Get all payments
+ * @access  Protected
+ */
+router.get(
+  '/',
+  paymentController.getAllPayments
+);
+
 module.exports = router;

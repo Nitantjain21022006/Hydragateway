@@ -1,5 +1,5 @@
 /**
- * gateway/src/middleware/analyticsCollector.js  (Phase 10)
+ * gateway/src/middleware/analyticsCollector.js  (Phase 10 + Phase 14 SSE)
  *
  * Analytics Collection Middleware – Redis-backed request metrics pipeline.
  *
@@ -15,7 +15,16 @@
  *  7. Per-Endpoint hit counter  – "METHOD /path" granularity
  *
  * ──────────────────────────────────────────────────────────────────────────
- * Redis Data Structures:
+ * Phase 14 Additions (SSE / Real-time):
+ * ──────────────────────────────────────────────────────────────────────────
+ *  - In-memory ring buffer (max RING_BUFFER_SIZE entries) stores structured
+ *    per-request records for the live request monitor.
+ *  - requestEventBus (EventEmitter) fires 'request' and 'circuit_breaker'
+ *    events so SSE clients receive updates in real-time.
+ *  - getRecentRequests() returns a snapshot copy of the ring buffer.
+ *
+ * ──────────────────────────────────────────────────────────────────────────
+ * Redis Data Structures (unchanged from Phase 10):
  * ──────────────────────────────────────────────────────────────────────────
  *
  *  analytics:total_requests          STRING  (INCR)
@@ -51,11 +60,51 @@
 
 'use strict';
 
+const EventEmitter = require('events');
 const { getRedisClient } = require('../../../../shared/config/redisClient');
 const { createServiceLogger } = require('../../../../shared/utils/logger');
 const { getRegistry } = require('../config/serviceRegistry');
 
 const logger = createServiceLogger('gateway-analytics');
+
+// ── Phase 14: Real-time Event Bus ─────────────────────────────────────────────
+
+/**
+ * requestEventBus – shared EventEmitter used to broadcast real-time events
+ * to SSE clients. Fires these event types:
+ *   'request'         – structured record for every completed HTTP request
+ *   'circuit_breaker' – CB state change events (emitted by gatewayRoutes.js)
+ */
+const requestEventBus = new EventEmitter();
+requestEventBus.setMaxListeners(50); // Allow up to 50 concurrent SSE clients
+
+/**
+ * Ring buffer for the last N request records.
+ * Capped to avoid unbounded memory growth.
+ */
+const RING_BUFFER_SIZE = 500;
+const recentRequests = [];
+
+/**
+ * pushToRingBuffer – adds a record to the ring buffer, evicting the oldest
+ * entry once the buffer reaches RING_BUFFER_SIZE.
+ * @param {object} record
+ */
+function pushToRingBuffer(record) {
+  recentRequests.push(record);
+  if (recentRequests.length > RING_BUFFER_SIZE) {
+    recentRequests.shift(); // Remove oldest entry
+  }
+}
+
+/**
+ * getRecentRequests – returns a snapshot copy of the ring buffer
+ * (newest entries last).
+ * @returns {Array<object>}
+ */
+function getRecentRequests() {
+  return [...recentRequests];
+}
 
 // ── Build a quick lookup: pathPrefix → service name ──────────────────────────
 const registry = getRegistry();
@@ -162,6 +211,29 @@ function analyticsCollector(req, res, next) {
     const timelineKey = getTimelineKey();
     const minuteField = getMinuteField();
 
+    // ── Phase 14: Build & emit real-time request record ──────────────────────
+    const requestRecord = {
+      correlationId:    req.correlationId || null,
+      timestamp:        new Date().toISOString(),
+      method,
+      path,
+      service,
+      statusCode:       status,
+      latencyMs:        Math.round(elapsedMs),
+      cacheHit:         res.getHeader('X-Cache') === 'HIT',
+      jwtStatus:        req.user ? 'authenticated' : (isFailed && status === 401 ? 'rejected' : 'public'),
+      rateLimitStatus:  status === 429 ? 'limited' : 'allowed',
+      gatewayInstance:  GATEWAY_INSTANCE,
+      bucket,
+    };
+
+    // Push to ring buffer (always)
+    pushToRingBuffer(requestRecord);
+
+    // Broadcast to all SSE clients (always)
+    requestEventBus.emit('request', requestRecord);
+
+    // ── Existing Phase 10: Redis pipeline (unchanged) ─────────────────────────
     let redis;
     try {
       redis = getRedisClient();
@@ -224,4 +296,4 @@ function analyticsCollector(req, res, next) {
   next();
 }
 
-module.exports = { analyticsCollector };
+module.exports = { analyticsCollector, requestEventBus, getRecentRequests };
