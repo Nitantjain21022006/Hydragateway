@@ -204,8 +204,9 @@ function analyticsCollector(req, res, next) {
 
     const status      = res.statusCode;
     const method      = req.method;
-    const path        = sanitisePath(req.path || '/');
-    const service     = resolveServiceName(req.path || '/');
+    const originalPath = (req.originalUrl || req.path || '/').split('?')[0];
+    const path        = sanitisePath(originalPath);
+    const service     = resolveServiceName(originalPath);
     const bucket      = getStatusBucket(status);
     const isFailed    = status >= 400;
     const timelineKey = getTimelineKey();

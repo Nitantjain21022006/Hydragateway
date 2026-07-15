@@ -19,7 +19,9 @@ function createServiceLogger(serviceName) {
   // Resolve log directory relative to this file (shared/utils/logger.js)
   // so all services write to the same central <project_root>/logs/ folder,
   // regardless of each service's working directory.
-  const logDir = process.env.LOG_DIR || path.join(__dirname, '..', '..', 'logs');
+  const logDir = process.env.LOG_DIR
+    ? (path.isAbsolute(process.env.LOG_DIR) ? process.env.LOG_DIR : path.resolve(__dirname, '..', '..', process.env.LOG_DIR))
+    : path.resolve(__dirname, '..', '..', 'logs');
 
   // Ensure log directory exists (services call this at boot)
   if (!fs.existsSync(logDir)) {
@@ -67,6 +69,16 @@ function createServiceLogger(serviceName) {
       format: format.combine(baseFormat, format.json()),
     })
   );
+
+  // Ensure all gateway components also write to gateway-combined.log
+  if (serviceName.startsWith('gateway') && serviceName !== 'gateway') {
+    transportList.push(
+      new transports.File({
+        filename: path.join(logDir, 'gateway-combined.log'),
+        format: format.combine(baseFormat, format.json()),
+      })
+    );
+  }
 
   return createLogger({
     level: process.env.LOG_LEVEL || 'info',

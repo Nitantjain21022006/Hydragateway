@@ -1,5 +1,6 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { useSSE } from './useSSE';
+import { useGateway } from '../context/GatewayContext';
 
 const MAX_LOGS = 300;
 
@@ -10,9 +11,15 @@ const MAX_LOGS = 300;
  * Supports pause/resume and clear.
  */
 export function useLiveLogs(filters = {}) {
+  const { gatewayUrl } = useGateway();
   const [logs,    setLogs]    = useState([]);
   const [paused,  setPaused]  = useState(false);
   const pausedRef = useRef(false);
+
+  // Clear logs when switching gateway instances
+  useEffect(() => {
+    setLogs([]);
+  }, [gatewayUrl]);
 
   const togglePause = useCallback(() => {
     setPaused((p) => {
@@ -46,3 +53,4 @@ export function useLiveLogs(filters = {}) {
 
   return { logs, connected, paused, togglePause, clear };
 }
+

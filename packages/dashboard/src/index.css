@@ -1034,3 +1034,24 @@ code, pre, .mono { font-family: 'JetBrains Mono', 'Fira Code', monospace; }
   border-radius: var(--radius-md) !important;
   box-shadow: var(--shadow-md) !important;
 }
+
+/* ── Keyframe Animations ──────────────────────────────────────────────────── */
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+@keyframes live-blink {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.4; }
+}
+
+@keyframes animate-fade-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fade-in {
+  animation: animate-fade-in 0.25s ease-out both;
+}

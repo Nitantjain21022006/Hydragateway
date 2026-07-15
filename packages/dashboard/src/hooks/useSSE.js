@@ -1,6 +1,5 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
-
-const GATEWAY_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+import { useGateway } from '../context/GatewayContext';
 
 /**
  * useSSE – Generic Server-Sent Events hook.
@@ -14,6 +13,7 @@ const GATEWAY_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
  * @returns {{ connected: boolean, disconnect: () => void }}
  */
 export function useSSE(path, handlers = {}) {
+  const { gatewayUrl } = useGateway();
   const [connected, setConnected] = useState(false);
   const esRef          = useRef(null);
   const handlersRef    = useRef(handlers);
@@ -26,7 +26,7 @@ export function useSSE(path, handlers = {}) {
   const connect = useCallback(() => {
     if (!active.current) return;
 
-    const url = `${GATEWAY_URL}${path}`;
+    const url = `${gatewayUrl}${path}`;
 
     try {
       const es = new EventSource(url, { withCredentials: false });
@@ -77,7 +77,7 @@ export function useSSE(path, handlers = {}) {
         if (active.current) connect();
       }, 3000);
     }
-  }, [path]);
+  }, [path, gatewayUrl]);
 
   useEffect(() => {
     active.current = true;
@@ -106,3 +106,4 @@ export function useSSE(path, handlers = {}) {
 
   return { connected, disconnect };
 }
+

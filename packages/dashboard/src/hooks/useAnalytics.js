@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import api from '../services/axios';
+import { useGateway } from '../context/GatewayContext';
 
 const REFRESH_INTERVAL = 30_000;
 
@@ -20,6 +21,7 @@ function formatTimestamp() {
  *   lastUpdated – human-readable timestamp
  */
 export function useAnalytics() {
+  const { gatewayUrl } = useGateway();
   const [summary,     setSummary]     = useState(null);
   const [timeline,    setTimeline]    = useState([]);
   const [endpoints,   setEndpoints]   = useState([]);
@@ -59,7 +61,8 @@ export function useAnalytics() {
     fetchAll();
     intervalRef.current = setInterval(fetchAll, REFRESH_INTERVAL);
     return () => clearInterval(intervalRef.current);
-  }, [fetchAll]);
+  }, [fetchAll, gatewayUrl]);
 
   return { summary, timeline, endpoints, loading, error, refresh: fetchAll, lastUpdated };
 }
+

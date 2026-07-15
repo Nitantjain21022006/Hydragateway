@@ -504,11 +504,11 @@ router.get('/logs', (req, res) => {
   const serviceFilter = req.query.service || null;
 
   // Resolve the gateway combined log file path.
-  // Winston (shared/utils/logger.js) writes logs relative to shared/utils/logger.js:
-  //   path.join(__dirname, '..', '..', 'logs') → ProjectSec/shared/../../logs → ProjectSec/logs  (wrong)
-  // But because each service runs with its own CWD, Winston falls back to the service-local logs/.
-  // The gateway process writes to: packages/gateway/logs/gateway-combined.log
-  const logDir  = process.env.LOG_DIR || path.join(__dirname, '../../logs');
+  // Use path.resolve so we get an absolute path regardless of CWD.
+  // LOG_DIR env var can be relative (e.g. "logs") or absolute.
+  const logDir = process.env.LOG_DIR
+    ? (path.isAbsolute(process.env.LOG_DIR) ? process.env.LOG_DIR : path.resolve(__dirname, '../../../../', process.env.LOG_DIR))
+    : path.resolve(__dirname, '../../../../logs');
   const logFile = path.join(logDir, 'gateway-combined.log');
 
   // ── SSE Headers ──────────────────────────────────────────────────────────
@@ -554,6 +554,9 @@ router.get('/logs', (req, res) => {
   const readNewLines = () => {
     try {
       const stat = fs.statSync(logFile);
+      if (stat.size < filePosition) {
+        filePosition = 0;
+      }
       if (stat.size <= filePosition) return; // No new data
 
       const fd     = fs.openSync(logFile, 'r');
@@ -593,17 +596,8 @@ router.get('/logs', (req, res) => {
     }
   };
 
-  // Watch for file changes
-  let watcher;
-  try {
-    watcher = fs.watch(logDir, (event, filename) => {
-      if (filename && filename.includes('gateway-combined')) {
-        readNewLines();
-      }
-    });
-  } catch (err) {
-    sendLogEvent({ type: 'warning', message: `Could not watch log directory: ${err.message}`, timestamp: new Date().toISOString() });
-  }
+  // Poll for new log lines every 500ms (reliable on Windows where fs.watch is erratic)
+  const pollInterval = setInterval(readNewLines, 500);
 
   // Heartbeat for log stream
   const heartbeat = setInterval(() => {
@@ -614,10 +608,8 @@ router.get('/logs', (req, res) => {
 
   // Cleanup
   const cleanup = () => {
+    clearInterval(pollInterval);
     clearInterval(heartbeat);
-    if (watcher) {
-      try { watcher.close(); } catch { /* ignore */ }
-    }
     logger.info('[SSE/Logs] Log stream client disconnected');
   };
 

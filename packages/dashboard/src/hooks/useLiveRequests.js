@@ -1,6 +1,7 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { useSSE } from './useSSE';
 import api from '../services/axios';
+import { useGateway } from '../context/GatewayContext';
 
 const MAX_REQUESTS = 200;
 
@@ -12,6 +13,7 @@ const MAX_REQUESTS = 200;
  * for immediate display before SSE kicks in.
  */
 export function useLiveRequests() {
+  const { gatewayUrl } = useGateway();
   const [requests,   setRequests]   = useState([]);
   const [paused,     setPaused]     = useState(false);
   const pausedRef = useRef(false);
@@ -39,7 +41,10 @@ export function useLiveRequests() {
   }, []);
 
   // Start SSE – load initial data first, then subscribe
-  useState(() => { loadInitial(); }, []);
+  useEffect(() => {
+    setRequests([]);
+    loadInitial();
+  }, [gatewayUrl, loadInitial]);
 
   const { connected } = useSSE('/analytics/stream', {
     onEvent: (eventName, data) => {
@@ -56,3 +61,4 @@ export function useLiveRequests() {
 
   return { requests, connected, paused, togglePause, clear };
 }
+

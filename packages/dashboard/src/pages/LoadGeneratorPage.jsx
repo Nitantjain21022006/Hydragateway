@@ -1,10 +1,36 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import TopBar from '../components/layout/TopBar';
 import { useLoadGenerator } from '../hooks/useLoadGenerator';
+import api from '../services/axios';
 import {
   Play, Square, ChevronDown, ChevronUp, AlertCircle,
-  Zap, CheckCircle2, XCircle, Lock
+  Zap, CheckCircle2, XCircle, Lock, RefreshCw
 } from 'lucide-react';
+
+// A valid seeded ObjectId used when no user is logged in
+const FALLBACK_USER_ID = '000000000000000000000001';
+
+// Decode the userId from the stored JWT without verifying signature (dashboard only needs the payload)
+function getUserIdFromToken(token) {
+  try {
+    if (!token) return null;
+    const payload = JSON.parse(atob(token.split('.')[1]));
+    return payload.id || payload.userId || payload.sub || null;
+  } catch {
+    return null;
+  }
+}
+
+// Product-service base URL — call directly to bypass gateway JWT requirement
+const PRODUCT_SERVICE_URL = import.meta.env.VITE_PRODUCT_SERVICE_URL || 'http://localhost:4002';
+
+// Build the order body with a real productId and valid userId
+const ORDER_BODY_TEMPLATE = (productId, userId) => JSON.stringify({
+  userId: userId || FALLBACK_USER_ID,
+  items: [{ productId, quantity: 1 }],
+  shippingAddress: { street: '123 Main St', city: 'Metropolis', country: 'USA' },
+  paymentMethod: 'CREDIT_CARD'
+}, null, 2);
 
 const ENDPOINTS = [
   { label: 'GET /v1/products',        value: '/v1/products',        method: 'GET'  },
@@ -13,12 +39,8 @@ const ENDPOINTS = [
     label: 'POST /v1/orders',
     value: '/v1/orders',
     method: 'POST',
-    body: JSON.stringify({
-      userId: "user_load_test",
-      items: [{ productId: "replace_with_active_product_id", quantity: 1 }],
-      shippingAddress: { street: "123 Main St", city: "Metropolis", country: "USA" },
-      paymentMethod: "CREDIT_CARD"
-    }, null, 2)
+    needsProductId: true,
+    body: ORDER_BODY_TEMPLATE('FETCHING...')
   },
   { label: 'GET /v1/orders',          value: '/v1/orders',          method: 'GET'  },
   { label: 'GET /v1/payments',        value: '/v1/payments',        method: 'GET'  },
@@ -81,11 +103,39 @@ export default function LoadGeneratorPage() {
     loginOrRegister,
     clearSession
   } = useLoadGenerator();
-  const [showBody,    setShowBody]    = useState(false);
-  const [showHeaders, setShowHeaders] = useState(false);
-  const [showAuth,    setShowAuth]    = useState(false);
+  const [showBody,         setShowBody]         = useState(false);
+  const [showHeaders,      setShowHeaders]       = useState(false);
+  const [showAuth,         setShowAuth]          = useState(false);
+  const [productIdStatus,  setProductIdStatus]   = useState(null); // null | 'loading' | 'ok' | 'error'
 
   const progress = derived.progress;
+
+  // Fetch a real active product ID directly from the product service (port 4002)
+  // We bypass the gateway to avoid JWT auth requirements for GET /v1/products
+  const fetchAndInjectProductId = useCallback(async () => {
+    setProductIdStatus('loading');
+    try {
+      // Call product-service directly — no gateway JWT needed
+      const res = await fetch(`${PRODUCT_SERVICE_URL}/v1/products`);
+      const json = await res.json();
+      const products = json?.data?.products || json?.data || [];
+      const active = Array.isArray(products)
+        ? products.find((p) => p.isActive !== false) || products[0]
+        : null;
+      const productId = active?._id || active?.id;
+      if (!productId) {
+        setProductIdStatus('error');
+        return;
+      }
+      // Also grab userId from the stored JWT if available
+      const token = config.authToken || localStorage.getItem('load_gen_token') || '';
+      const userId = getUserIdFromToken(token) || FALLBACK_USER_ID;
+      setConfig((c) => ({ ...c, body: ORDER_BODY_TEMPLATE(productId, userId) }));
+      setProductIdStatus('ok');
+    } catch {
+      setProductIdStatus('error');
+    }
+  }, [setConfig, config.authToken]);
 
   const handleEndpointPreset = (e) => {
     const preset = ENDPOINTS.find((ep) => ep.value === e.target.value);
@@ -99,8 +149,15 @@ export default function LoadGeneratorPage() {
       if (preset.method === 'POST') {
         setShowBody(true);
       }
+      // Auto-fetch a real product ID when the order preset is selected
+      if (preset.needsProductId) {
+        fetchAndInjectProductId();
+      } else {
+        setProductIdStatus(null);
+      }
     } else {
       setConfig((c) => ({ ...c, endpoint: e.target.value }));
+      setProductIdStatus(null);
     }
   };
 
@@ -136,6 +193,33 @@ export default function LoadGeneratorPage() {
                     <option key={ep.value + ep.method} value={ep.value}>{ep.label}</option>
                   ))}
                 </select>
+
+                {/* Product ID fetch status banner */}
+                {productIdStatus === 'loading' && (
+                  <div style={{ marginTop: 8, fontSize: 11, color: 'var(--blue)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <RefreshCw size={11} style={{ animation: 'spin 1s linear infinite' }} />
+                    Fetching a real product ID from the API…
+                  </div>
+                )}
+                {productIdStatus === 'ok' && (
+                  <div style={{ marginTop: 8, fontSize: 11, color: 'var(--emerald)' }}>
+                    ✓ Product ID injected into request body automatically.
+                  </div>
+                )}
+                {productIdStatus === 'error' && (
+                  <div style={{ marginTop: 8, fontSize: 11, color: 'var(--rose)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <AlertCircle size={11} />
+                    Could not fetch a product ID. Replace FETCHING... in the body manually.
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      style={{ fontSize: 10, padding: '2px 6px', height: 'auto', minHeight: 0 }}
+                      onClick={fetchAndInjectProductId}
+                    >
+                      Retry
+                    </button>
+                  </div>
+                )}
               </div>
 
               {/* Method + custom endpoint */}

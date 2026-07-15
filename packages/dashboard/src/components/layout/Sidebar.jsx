@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
+import { useGateway } from '../../context/GatewayContext';
 import {
   LayoutDashboard, Radio, GitBranch, Activity, FileText,
   Zap, ChevronRight, Wifi, WifiOff
@@ -26,6 +27,7 @@ const NAV_ITEMS = [
 
 export default function Sidebar({ sseConnected }) {
   const location = useLocation();
+  const { gatewayUrl, setGatewayUrl } = useGateway();
 
   return (
     <aside className="sidebar animate-slide-in">
@@ -76,17 +78,42 @@ export default function Sidebar({ sseConnected }) {
 
       {/* Footer */}
       <div className="sidebar-footer">
-        <div className="flex-center gap-2" style={{ marginBottom: 4 }}>
+        <div className="flex-center gap-2" style={{ marginBottom: 8 }}>
           {sseConnected ? (
             <><Wifi size={11} style={{ color: 'var(--emerald)' }} />
-              <span style={{ color: 'var(--emerald)' }}>Stream connected</span></>
+              <span style={{ color: 'var(--emerald)', fontSize: 11 }}>Stream connected</span></>
           ) : (
             <><WifiOff size={11} style={{ color: 'var(--rose)' }} />
-              <span style={{ color: 'var(--rose)' }}>Stream offline</span></>
+              <span style={{ color: 'var(--rose)', fontSize: 11 }}>Stream offline</span></>
           )}
         </div>
-        <div>Gateway @ localhost:3000</div>
+        
+        <div style={{ width: '100%' }}>
+          <label style={{ fontSize: 9, fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: 4, letterSpacing: '0.5px' }}>
+            ACTIVE GATEWAY
+          </label>
+          <select
+            value={gatewayUrl}
+            onChange={(e) => setGatewayUrl(e.target.value)}
+            className="select"
+            style={{ 
+              width: '100%', 
+              padding: '6px 8px', 
+              fontSize: 11, 
+              height: 30,
+              backgroundColor: 'var(--bg-card, #1e1e2e)',
+              color: 'var(--text-primary, #cdd6f4)',
+              border: '1px solid var(--border, #313244)',
+              borderRadius: 6,
+              cursor: 'pointer'
+            }}
+          >
+            <option value="http://localhost:3000">Gateway 1 (Port 3000)</option>
+            <option value="http://localhost:3001">Gateway 2 (Port 3001)</option>
+          </select>
+        </div>
       </div>
     </aside>
   );
 }
+
