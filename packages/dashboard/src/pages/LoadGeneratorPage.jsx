@@ -44,25 +44,7 @@ const ENDPOINTS = [
   },
   { label: 'GET /v1/orders',          value: '/v1/orders',          method: 'GET'  },
   { label: 'GET /v1/payments',        value: '/v1/payments',        method: 'GET'  },
-  {
-    label: 'POST /v1/auth/register',
-    value: '/v1/auth/register',
-    method: 'POST',
-    body: JSON.stringify({
-      name: "Load Test User",
-      email: "test@example.com",
-      password: "Password123"
-    }, null, 2)
-  },
-  {
-    label: 'POST /v1/auth/login',
-    value: '/v1/auth/login',
-    method: 'POST',
-    body: JSON.stringify({
-      email: "test@example.com",
-      password: "Password123"
-    }, null, 2)
-  },
+
   { label: 'GET /health',             value: '/health',             method: 'GET'  },
   { label: 'GET /analytics/summary',  value: '/analytics/summary',  method: 'GET'  },
 ];
