@@ -1,0 +1,332 @@
+# =============================================================================
+# HydraGateway – docker-compose.yml
+# =============================================================================
+#
+# Starts the complete HydraGateway stack with a single command:
+#   docker compose up --build
+#
+# Container layout:
+#
+#  ┌──────────────────────────────────────────────────────────────────────┐
+#  │                    Docker Network: hydra-net                         │
+#  │                                                                      │
+#  │  [Browser] → dashboard      :5173 (Nginx serving React SPA)         │
+#  │  [Browser] → load-balancer  :8080 → gateway   :3000                 │
+#  │                                   → gateway-2 :3001                 │
+#  │              gateway-1/2 → auth-service    :4001                    │
+#  │                          → product-service :4002                    │
+#  │                          → payment-service :4003                    │
+#  │                          → order-service   :4004                    │
+#  │                                                                      │
+#  │  redis   :6379  ← used by gateway, auth, product, payment           │
+#  │  mongodb :27017 ← used by auth, product, payment, order             │
+#  └──────────────────────────────────────────────────────────────────────┘
+#
+# All services load environment variables from .env.docker
+# (localhost → Docker service names, e.g. REDIS_HOST=redis)
+# =============================================================================
+
+version: "3.9"
+
+# ── Custom Bridge Network ─────────────────────────────────────────────────────
+networks:
+  hydra-net:
+    driver: bridge
+    name: hydra-net
+
+# ── Named Volumes (data persistence) ─────────────────────────────────────────
+volumes:
+  mongo-data:
+    name: hydra-mongo-data
+  redis-data:
+    name: hydra-redis-data
+
+# ── Services ──────────────────────────────────────────────────────────────────
+services:
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # Infrastructure: MongoDB
+  # ──────────────────────────────────────────────────────────────────────────
+  mongodb:
+    image: mongo:7
+    container_name: hydra-mongodb
+    restart: unless-stopped
+    ports:
+      - "27017:27017"         # exposed so you can connect with MongoDB Compass
+    volumes:
+      - mongo-data:/data/db   # data survives container restarts
+    networks:
+      - hydra-net
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # Infrastructure: Redis
+  # ──────────────────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: hydra-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"           # exposed so you can use redis-cli locally
+    volumes:
+      - redis-data:/data
+    networks:
+      - hydra-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    command: redis-server --save 60 1 --loglevel warning
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # Auth Service
+  # ──────────────────────────────────────────────────────────────────────────
+  auth-service:
+    build:
+      context: .               # build context = project root (for shared/)
+      dockerfile: packages/auth-service/Dockerfile
+    image: hydra/auth-service:latest
+    container_name: hydra-auth
+    restart: unless-stopped
+    env_file:
+      - .env.docker
+    environment:
+      AUTH_PORT: "4001"
+    ports:
+      - "4001:4001"
+    networks:
+      - hydra-net
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:4001/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # Product Service
+  # ──────────────────────────────────────────────────────────────────────────
+  product-service:
+    build:
+      context: .
+      dockerfile: packages/product-service/Dockerfile
+    image: hydra/product-service:latest
+    container_name: hydra-product
+    restart: unless-stopped
+    env_file:
+      - .env.docker
+    environment:
+      PRODUCT_PORT: "4002"
+    ports:
+      - "4002:4002"
+    networks:
+      - hydra-net
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:4002/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # Payment Service
+  # ──────────────────────────────────────────────────────────────────────────
+  payment-service:
+    build:
+      context: .
+      dockerfile: packages/payment-service/Dockerfile
+    image: hydra/payment-service:latest
+    container_name: hydra-payment
+    restart: unless-stopped
+    env_file:
+      - .env.docker
+    environment:
+      PAYMENT_PORT: "4003"
+    ports:
+      - "4003:4003"
+    networks:
+      - hydra-net
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:4003/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # Order Service
+  # ──────────────────────────────────────────────────────────────────────────
+  order-service:
+    build:
+      context: .
+      dockerfile: packages/order-service/Dockerfile
+    image: hydra/order-service:latest
+    container_name: hydra-order
+    restart: unless-stopped
+    env_file:
+      - .env.docker
+    environment:
+      ORDER_PORT: "4004"
+    ports:
+      - "4004:4004"
+    networks:
+      - hydra-net
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:4004/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # API Gateway – Instance 1
+  # ──────────────────────────────────────────────────────────────────────────
+  gateway:
+    build:
+      context: .
+      dockerfile: packages/gateway/Dockerfile
+    image: hydra/gateway:latest
+    container_name: hydra-gateway-1
+    restart: unless-stopped
+    env_file:
+      - .env.docker
+    environment:
+      GATEWAY_PORT: "3000"
+      GATEWAY_INSTANCE_ID: "gateway-1"
+    ports:
+      - "3000:3000"
+    networks:
+      - hydra-net
+    depends_on:
+      auth-service:
+        condition: service_healthy
+      product-service:
+        condition: service_healthy
+      payment-service:
+        condition: service_healthy
+      order-service:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 25s
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # API Gateway – Instance 2
+  # (Same image, different GATEWAY_PORT + GATEWAY_INSTANCE_ID)
+  # ──────────────────────────────────────────────────────────────────────────
+  gateway-2:
+    image: hydra/gateway:latest   # reuse the already-built image
+    container_name: hydra-gateway-2
+    restart: unless-stopped
+    env_file:
+      - .env.docker
+    environment:
+      GATEWAY_PORT: "3001"
+      GATEWAY_INSTANCE_ID: "gateway-2"
+    ports:
+      - "3001:3001"
+    networks:
+      - hydra-net
+    depends_on:
+      gateway:               # gateway image must be built first
+        condition: service_started
+      auth-service:
+        condition: service_healthy
+      product-service:
+        condition: service_healthy
+      payment-service:
+        condition: service_healthy
+      order-service:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3001/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 25s
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # Load Balancer
+  # ──────────────────────────────────────────────────────────────────────────
+  load-balancer:
+    build:
+      context: .
+      dockerfile: packages/load-balancer/Dockerfile
+    image: hydra/load-balancer:latest
+    container_name: hydra-lb
+    restart: unless-stopped
+    env_file:
+      - .env.docker
+    environment:
+      LB_PORT: "8080"
+    ports:
+      - "8080:8080"
+    networks:
+      - hydra-net
+    depends_on:
+      gateway:
+        condition: service_healthy
+      gateway-2:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/lb-health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # Dashboard (React SPA served by Nginx)
+  # ──────────────────────────────────────────────────────────────────────────
+  dashboard:
+    build:
+      context: .
+      dockerfile: packages/dashboard/Dockerfile
+    image: hydra/dashboard:latest
+    container_name: hydra-dashboard
+    restart: unless-stopped
+    ports:
+      - "5173:80"             # visit http://localhost:5173 in your browser
+    networks:
+      - hydra-net
+    depends_on:
+      load-balancer:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost/nginx-health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s

@@ -1,0 +1,45 @@
+# ── Node ──────────────────────────────────────────────────────────────────────
+node_modules
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ── Build artefacts ───────────────────────────────────────────────────────────
+dist
+build
+.next
+.nuxt
+
+# ── Logs ──────────────────────────────────────────────────────────────────────
+logs
+*.log
+
+# ── Environment (secrets) ────────────────────────────────────────────────────
+.env
+.env.*
+!.env.docker
+
+# ── Version control ───────────────────────────────────────────────────────────
+.git
+.gitignore
+.gitattributes
+
+# ── IDE / Editor ──────────────────────────────────────────────────────────────
+.vscode
+.idea
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+
+# ── OS artefacts ─────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+
+# ── Test / Temp files ────────────────────────────────────────────────────────
+*.test.js
+*.spec.js
+coverage
+tmp_requests.json
+test-*.js
+test-*.log
