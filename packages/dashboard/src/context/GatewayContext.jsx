@@ -3,8 +3,9 @@ import api from '../services/axios';
 
 const GatewayContext = createContext();
 
-export const GATEWAY_1_URL = 'http://localhost:3000';
-export const GATEWAY_2_URL = 'http://localhost:3001';
+export const GATEWAY_1_URL    = 'http://localhost:3000';
+export const GATEWAY_2_URL    = 'http://localhost:3001';
+export const LOAD_BALANCER_URL = 'http://localhost:8080';
 
 export function GatewayProvider({ children }) {
   const [gatewayUrl, setGatewayUrl] = useState(() => {

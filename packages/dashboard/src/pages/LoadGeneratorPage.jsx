@@ -1,10 +1,12 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import TopBar from '../components/layout/TopBar';
-import { useLoadGenerator } from '../hooks/useLoadGenerator';
+import { useLoadGenerator, resolveTargetUrl } from '../hooks/useLoadGenerator';
+import { LOAD_BALANCER_URL, GATEWAY_1_URL, GATEWAY_2_URL } from '../context/GatewayContext';
 import api from '../services/axios';
 import {
   Play, Square, ChevronDown, ChevronUp, AlertCircle,
-  Zap, CheckCircle2, XCircle, Lock, RefreshCw
+  Zap, CheckCircle2, XCircle, Lock, RefreshCw, Shuffle,
+  Server, ArrowRight
 } from 'lucide-react';
 
 // A valid seeded ObjectId used when no user is logged in
@@ -49,6 +51,34 @@ const ENDPOINTS = [
   { label: 'GET /analytics/summary',  value: '/analytics/summary',  method: 'GET'  },
 ];
 
+// Traffic target definitions
+const TRAFFIC_TARGETS = [
+  {
+    value:  'lb',
+    label:  'Load Balancer',
+    sub:    'Round-Robin :8080',
+    color:  'var(--purple)',
+    icon:   Shuffle,
+    desc:   'Requests are distributed alternately: req 1→GW1, req 2→GW2, …',
+  },
+  {
+    value:  'gw1',
+    label:  'Gateway 1',
+    sub:    'Direct :3000',
+    color:  'var(--blue)',
+    icon:   Server,
+    desc:   'All requests go only to Gateway 1 (port 3000)',
+  },
+  {
+    value:  'gw2',
+    label:  'Gateway 2',
+    sub:    'Direct :3001',
+    color:  'var(--cyan)',
+    icon:   Server,
+    desc:   'All requests go only to Gateway 2 (port 3001)',
+  },
+];
+
 function StatBox({ label, value, color = 'var(--text-primary)', mono = false }) {
   return (
     <div className="card" style={{ padding: '14px 18px', textAlign: 'center' }}>
@@ -71,6 +101,34 @@ function StatBox({ label, value, color = 'var(--text-primary)', mono = false }) 
   );
 }
 
+/**
+ * GatewayHealthBadge — shows whether a single gateway is reachable.
+ * Used inside the LB traffic target description.
+ */
+function GatewayHealthBadge({ id, healthy, target }) {
+  const color  = healthy === true  ? 'var(--emerald)'
+               : healthy === false ? 'var(--rose)'
+               : 'var(--text-muted)';
+  const dot    = healthy === true  ? '●'
+               : healthy === false ? '✖'
+               : '○';
+  const label  = healthy === true  ? 'UP'
+               : healthy === false ? 'DOWN'
+               : '...';
+
+  return (
+    <span style={{
+      display: 'inline-flex', alignItems: 'center', gap: 4,
+      fontSize: 10, fontWeight: 700, color,
+      padding: '2px 7px', borderRadius: 4,
+      border: `1px solid ${color}44`,
+      background: `${color}11`,
+    }}>
+      {dot} {id} {label}
+    </span>
+  );
+}
+
 export default function LoadGeneratorPage() {
   const {
     config,
@@ -85,12 +143,41 @@ export default function LoadGeneratorPage() {
     loginOrRegister,
     clearSession
   } = useLoadGenerator();
+
   const [showBody,         setShowBody]         = useState(false);
   const [showHeaders,      setShowHeaders]       = useState(false);
   const [showAuth,         setShowAuth]          = useState(false);
   const [productIdStatus,  setProductIdStatus]   = useState(null); // null | 'loading' | 'ok' | 'error'
 
+  // LB health state — polled when targetMode === 'lb'
+  const [lbHealth, setLbHealth] = useState(null); // null | { gateways: [...] }
+  const [lbHealthLoading, setLbHealthLoading] = useState(false);
+
   const progress = derived.progress;
+
+  // Poll /lb-health every 5s when LB mode is active
+  const probeLbHealth = useCallback(async () => {
+    setLbHealthLoading(true);
+    try {
+      const res = await fetch(`${LOAD_BALANCER_URL}/lb-health`);
+      const json = await res.json();
+      setLbHealth(json);
+    } catch {
+      setLbHealth(null);
+    } finally {
+      setLbHealthLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (config.targetMode !== 'lb') {
+      setLbHealth(null);
+      return;
+    }
+    probeLbHealth();
+    const id = setInterval(probeLbHealth, 5000);
+    return () => clearInterval(id);
+  }, [config.targetMode, probeLbHealth]);
 
   // Fetch a real active product ID directly from the product service (port 4002)
   // We bypass the gateway to avoid JWT auth requirements for GET /v1/products
@@ -143,6 +230,10 @@ export default function LoadGeneratorPage() {
     }
   };
 
+  // Current target info for display
+  const currentTarget = TRAFFIC_TARGETS.find((t) => t.value === config.targetMode) || TRAFFIC_TARGETS[0];
+  const resolvedUrl   = resolveTargetUrl(config.targetMode);
+
   return (
     <>
       <TopBar
@@ -164,6 +255,93 @@ export default function LoadGeneratorPage() {
             </div>
 
             <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+
+              {/* ── Traffic Target ──────────────────────────────────── */}
+              <div>
+                <label style={{
+                  fontSize: 11, color: 'var(--text-muted)', display: 'block',
+                  marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.6px'
+                }}>
+                  Traffic Target
+                </label>
+
+                {/* Segmented button row */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6 }}>
+                  {TRAFFIC_TARGETS.map((t) => {
+                    const Icon = t.icon;
+                    const active = config.targetMode === t.value;
+                    return (
+                      <button
+                        key={t.value}
+                        type="button"
+                        onClick={() => setConfig((c) => ({ ...c, targetMode: t.value }))}
+                        disabled={running}
+                        style={{
+                          display: 'flex', flexDirection: 'column', alignItems: 'center',
+                          gap: 4, padding: '8px 4px',
+                          borderRadius: 'var(--radius-sm)',
+                          border: active ? `2px solid ${t.color}` : '2px solid var(--border-color)',
+                          background: active ? `${t.color}18` : 'transparent',
+                          color: active ? t.color : 'var(--text-muted)',
+                          cursor: running ? 'not-allowed' : 'pointer',
+                          transition: 'all 0.15s ease',
+                          opacity: running ? 0.5 : 1,
+                        }}
+                      >
+                        <Icon size={14} />
+                        <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.3px' }}>{t.label}</span>
+                        <span style={{ fontSize: 9, opacity: 0.7 }}>{t.sub}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Target description + URL */}
+                <div style={{
+                  marginTop: 8,
+                  padding: '8px 10px',
+                  borderRadius: 'var(--radius-sm)',
+                  background: `${currentTarget.color}0D`,
+                  border: `1px solid ${currentTarget.color}33`,
+                  fontSize: 10,
+                  color: currentTarget.color,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 5,
+                }}>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontWeight: 600 }}>
+                    <ArrowRight size={10} />
+                    {currentTarget.desc}
+                  </span>
+                  <span style={{ fontFamily: 'JetBrains Mono, monospace', opacity: 0.8, fontSize: 9 }}>
+                    {resolvedUrl}{config.endpoint}
+                  </span>
+
+                  {/* LB gateway health status (only when LB mode is selected) */}
+                  {config.targetMode === 'lb' && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 2 }}>
+                      {lbHealthLoading && !lbHealth && (
+                        <span style={{ fontSize: 9, opacity: 0.6 }}>Checking gateways…</span>
+                      )}
+                      {lbHealth?.gateways?.map((gw) => (
+                        <GatewayHealthBadge
+                          key={gw.id}
+                          id={gw.id}
+                          healthy={gw.healthy}
+                          target={gw.target}
+                        />
+                      ))}
+                      {!lbHealth && !lbHealthLoading && (
+                        <span style={{ fontSize: 9, color: 'var(--rose)', display: 'flex', alignItems: 'center', gap: 4 }}>
+                          <AlertCircle size={9} />
+                          LB unreachable — is it running on :8080?
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+
               {/* Endpoint preset */}
               <div>
                 <label style={{ fontSize: 11, color: 'var(--text-muted)', display: 'block', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.6px' }}>
@@ -367,7 +545,11 @@ export default function LoadGeneratorPage() {
                           type="button"
                           className="btn btn-primary btn-sm"
                           style={{ fontSize: 10, flex: 1, padding: '4px 6px', height: 'auto', minHeight: 0 }}
-                          onClick={() => loginOrRegister(config.authEmail, config.authPassword)}
+                          onClick={() => loginOrRegister(
+                            config.authEmail,
+                            config.authPassword,
+                            resolveTargetUrl(config.targetMode)
+                          )}
                           disabled={running || authStatus.status === 'loading'}
                         >
                           {authStatus.status === 'loading' ? 'Logging in...' : 'Login / Register'}

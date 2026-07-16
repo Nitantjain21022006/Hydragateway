@@ -1,7 +1,29 @@
 import { useState, useCallback, useRef } from 'react';
 import axios from 'axios';
+import {
+  GATEWAY_1_URL,
+  GATEWAY_2_URL,
+  LOAD_BALANCER_URL,
+} from '../context/GatewayContext';
 
-const GATEWAY_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+// ── URL helpers ────────────────────────────────────────────────────────────────
+
+/**
+ * Resolve the base URL to send load-test requests to, based on targetMode.
+ * 'lb'  → Load Balancer (port 8080) — round-robin across healthy gateways
+ * 'gw1' → Gateway 1 directly        (port 3000)
+ * 'gw2' → Gateway 2 directly        (port 3001)
+ */
+export function resolveTargetUrl(targetMode) {
+  switch (targetMode) {
+    case 'gw1': return GATEWAY_1_URL;
+    case 'gw2': return GATEWAY_2_URL;
+    case 'lb':
+    default:    return LOAD_BALANCER_URL;
+  }
+}
+
+// ── Initial state ──────────────────────────────────────────────────────────────
 
 const INITIAL_CONFIG = {
   endpoint:    '/v1/products',
@@ -15,6 +37,8 @@ const INITIAL_CONFIG = {
   autoAuth:    true,
   authEmail:   'test@example.com',
   authPassword: 'Password123',
+  // 'lb' = Load Balancer round-robin (default), 'gw1' = direct to GW1, 'gw2' = direct to GW2
+  targetMode:  'lb',
 };
 
 const INITIAL_STATS = {
@@ -34,17 +58,24 @@ function sleep(ms) {
  * useLoadGenerator – manages browser-side load test execution.
  *
  * Generates HTTP requests in configurable batches using Promise.allSettled.
- * All requests hit the real gateway, triggering analytics, rate limiters,
- * circuit breakers, and SSE broadcasts.
+ * All requests hit the real gateway (or load balancer), triggering analytics,
+ * rate limiters, circuit breakers, and SSE broadcasts.
+ *
+ * When targetMode = 'lb', every request goes to the Load Balancer (port 8080)
+ * which distributes them in strict round-robin across healthy gateway instances.
+ * A 200-request burst → ~100 to Gateway 1, ~100 to Gateway 2.
  *
  * Returns:
- *   config    – current test configuration
- *   setConfig – update config
- *   running   – whether a test is in progress
- *   stats     – live statistics
- *   start     – begin the load test
- *   stop      – abort the load test
- *   results   – individual request results (capped at 1000)
+ *   config         – current test configuration (includes targetMode)
+ *   setConfig      – update config
+ *   running        – whether a test is in progress
+ *   stats          – live statistics
+ *   start          – begin the load test
+ *   stop           – abort the load test
+ *   results        – individual request results (capped at 1000)
+ *   authStatus     – current auth state
+ *   loginOrRegister – trigger auth flow
+ *   clearSession   – wipe stored token
  */
 export function useLoadGenerator() {
   const [config,  setConfig]  = useState(INITIAL_CONFIG);
@@ -54,10 +85,18 @@ export function useLoadGenerator() {
   const [authStatus, setAuthStatus] = useState({ status: 'idle', message: '' });
   const stopFlag = useRef(false);
 
-  const loginOrRegister = useCallback(async (email, password) => {
+  /**
+   * loginOrRegister – try to log in; if user doesn't exist, register first.
+   * @param {string} email
+   * @param {string} password
+   * @param {string} [targetUrl] – which gateway/LB to authenticate against.
+   *                               Defaults to resolving from current config.targetMode.
+   */
+  const loginOrRegister = useCallback(async (email, password, targetUrl) => {
+    const base = targetUrl || LOAD_BALANCER_URL;
     setAuthStatus({ status: 'loading', message: 'Authenticating...' });
     try {
-      const loginRes = await axios.post(`${GATEWAY_URL}/v1/auth/login`, { email, password }, { timeout: 5000 });
+      const loginRes = await axios.post(`${base}/v1/auth/login`, { email, password }, { timeout: 5000 });
       if (loginRes.status === 200 && loginRes.data?.success) {
         const token = loginRes.data.data.token;
         localStorage.setItem('load_gen_token', token);
@@ -78,7 +117,7 @@ export function useLoadGenerator() {
       if (isUserNotFound) {
         setAuthStatus({ status: 'loading', message: 'User not found. Registering...' });
         try {
-          const regRes = await axios.post(`${GATEWAY_URL}/v1/auth/register`, {
+          const regRes = await axios.post(`${base}/v1/auth/register`, {
             name: 'Load Test User',
             email,
             password
@@ -140,6 +179,9 @@ export function useLoadGenerator() {
       startTime: Date.now(),
     });
 
+    // Resolve which URL to send all load-test requests to
+    const targetUrl = resolveTargetUrl(config.targetMode);
+
     const isProtectedPath = (path) => {
       const publicPrefixes = [
         '/v1/auth/register',
@@ -155,7 +197,8 @@ export function useLoadGenerator() {
     if (config.autoAuth && isProtectedPath(config.endpoint)) {
       if (!currentToken) {
         try {
-          currentToken = await loginOrRegister(config.authEmail, config.authPassword);
+          // Auth against the same target (LB or direct GW) the load test uses
+          currentToken = await loginOrRegister(config.authEmail, config.authPassword, targetUrl);
         } catch (err) {
           setResults([{
             success: false,
@@ -201,9 +244,13 @@ export function useLoadGenerator() {
       const batchPromises = Array.from({ length: batchSize }, () => {
         const t0 = Date.now();
 
+        // Every single request goes to the resolved targetUrl:
+        //   'lb'  → LB round-robins it across GW1 / GW2 automatically
+        //   'gw1' → always GW1
+        //   'gw2' → always GW2
         return axios({
           method:  config.method,
-          url:     `${GATEWAY_URL}${config.endpoint}`,
+          url:     `${targetUrl}${config.endpoint}`,
           headers: requestHeaders,
           data:    config.body && ['POST', 'PUT', 'PATCH'].includes(config.method)
                    ? (() => { try { return JSON.parse(config.body); } catch { return config.body; } })()
@@ -278,6 +325,7 @@ export function useLoadGenerator() {
     authStatus,
     setAuthStatus,
     loginOrRegister,
-    clearSession
+    clearSession,
+    resolveTargetUrl,
   };
 }
