@@ -23,8 +23,8 @@ function getUserIdFromToken(token) {
   }
 }
 
-// Product-service base URL — call directly to bypass gateway JWT requirement
-const PRODUCT_SERVICE_URL = import.meta.env.VITE_PRODUCT_SERVICE_URL || 'http://localhost:4002';
+// Product fetching goes via the Load Balancer (gateway handles CORS + auth forwarding)
+const PRODUCT_SERVICE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080';
 
 // Build the order body with a real productId and valid userId
 const ORDER_BODY_TEMPLATE = (productId, userId) => JSON.stringify({

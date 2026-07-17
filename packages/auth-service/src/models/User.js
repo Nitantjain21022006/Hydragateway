@@ -13,7 +13,7 @@
  * - `toJSON` strips __v and _id (replaced by id) for a clean API surface.
  */
 
-const mongoose = require('mongoose');
+const { mongoose } = require('../../../../shared/config/dbConnect');
 const bcrypt = require('bcryptjs');
 
 const userSchema = new mongoose.Schema(

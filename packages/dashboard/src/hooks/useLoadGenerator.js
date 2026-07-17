@@ -96,7 +96,7 @@ export function useLoadGenerator() {
     const base = targetUrl || LOAD_BALANCER_URL;
     setAuthStatus({ status: 'loading', message: 'Authenticating...' });
     try {
-      const loginRes = await axios.post(`${base}/v1/auth/login`, { email, password }, { timeout: 5000 });
+      const loginRes = await axios.post(`${base}/v1/auth/login`, { email, password }, { timeout: 15000 });
       if (loginRes.status === 200 && loginRes.data?.success) {
         const token = loginRes.data.data.token;
         localStorage.setItem('load_gen_token', token);
@@ -121,7 +121,7 @@ export function useLoadGenerator() {
             name: 'Load Test User',
             email,
             password
-          }, { timeout: 5000 });
+          }, { timeout: 15000 });
 
           if (regRes.data?.success) {
             const token = regRes.data.data.token;

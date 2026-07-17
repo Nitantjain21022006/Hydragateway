@@ -6,6 +6,9 @@
  * Design decisions:
  * - Single call per process; subsequent calls return cached connection.
  * - Pool size is configurable via MONGO_POOL_SIZE env var.
+ * - MONGO_URI must be a valid MongoDB connection string (local or Atlas).
+ *   In Docker, MONGO_URI is injected via the ${MONGO_URI} environment variable
+ *   defined in docker-compose.yml – pointing to MongoDB Atlas (external, cloud).
  * - Unhandled rejection on failed initial connect shuts the process
  *   down cleanly so the container restarter (Docker / k8s) can react.
  */
@@ -42,4 +45,4 @@ async function connectDB() {
   }
 }
 
-module.exports = { connectDB };
+module.exports = { connectDB, mongoose };

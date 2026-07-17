@@ -41,6 +41,7 @@ const PUBLIC_PREFIXES = [
   '/v1/auth/logout',
   '/health',
   '/analytics', // Phase 10 – dashboard API is public (lock down via IP/admin scope in production)
+  '/v1/products', // Product catalog is publicly readable – no JWT required
 ];
 
 /**

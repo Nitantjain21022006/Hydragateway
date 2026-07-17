@@ -11,7 +11,7 @@
  * - toJSON transformation for clean API responses.
  */
 
-const mongoose = require('mongoose');
+const { mongoose } = require('../../../../shared/config/dbConnect');
 const { v4: uuidv4 } = require('uuid');
 
 const paymentSchema = new mongoose.Schema(

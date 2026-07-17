@@ -11,6 +11,7 @@ WORKDIR /app
 
 # ── Copy shared utilities ─────────────────────────────────────────────────────
 COPY shared/ ./shared/
+RUN cd shared && npm install --production
 
 # ── Install dependencies ──────────────────────────────────────────────────────
 COPY packages/product-service/package.json ./packages/product-service/package.json
@@ -18,6 +19,9 @@ RUN cd packages/product-service && npm install --production
 
 # ── Copy application source ───────────────────────────────────────────────────
 COPY packages/product-service/src/ ./packages/product-service/src/
+
+# ── Create log directory with correct ownership ──────────────────────────────
+RUN mkdir -p /app/logs && chown -R hydra:hydra /app/logs
 
 USER hydra
 

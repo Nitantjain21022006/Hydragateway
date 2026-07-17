@@ -12,6 +12,7 @@ WORKDIR /app
 
 # ── Copy shared utilities (required by all services) ─────────────────────────
 COPY shared/ ./shared/
+RUN cd shared && npm install --production
 
 # ── Install dependencies ──────────────────────────────────────────────────────
 # Copy package files first so Docker caches the npm install layer
@@ -21,8 +22,13 @@ RUN cd packages/load-balancer && npm install --production
 # ── Copy application source ───────────────────────────────────────────────────
 COPY packages/load-balancer/src/ ./packages/load-balancer/src/
 
+# ── Create log directory with correct ownership ──────────────────────────────
+RUN mkdir -p /app/logs && chown -R hydra:hydra /app/logs
+
 # Switch to non-root user
 USER hydra
+
+ENV LOG_DIR=/app/logs
 
 EXPOSE 8080
 

@@ -10,7 +10,7 @@
  * - toJSON transformation for clean API responses (stripping __v, mapping _id to id).
  */
 
-const mongoose = require('mongoose');
+const { mongoose } = require('../../../../shared/config/dbConnect');
 
 const productSchema = new mongoose.Schema(
   {

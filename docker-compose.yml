@@ -18,12 +18,17 @@
 #  │                          → payment-service :4003                    │
 #  │                          → order-service   :4004                    │
 #  │                                                                      │
-#  │  redis   :6379  ← used by gateway, auth, product, payment           │
-#  │  mongodb :27017 ← used by auth, product, payment, order             │
+#  │  redis :6379  ← used by gateway, auth, product, payment             │
+#  │                                                                      │
+#  │  MongoDB Atlas (external, cloud) ← accessed via MONGO_URI env var   │
 #  └──────────────────────────────────────────────────────────────────────┘
 #
 # All services load environment variables from .env.docker
 # (localhost → Docker service names, e.g. REDIS_HOST=redis)
+#
+# MongoDB is NOT run inside Docker. It is hosted on MongoDB Atlas.
+# Set MONGO_URI in your shell environment or in a .env.docker override
+# before running `docker compose up --build`.
 # =============================================================================
 
 version: "3.9"
@@ -36,33 +41,11 @@ networks:
 
 # ── Named Volumes (data persistence) ─────────────────────────────────────────
 volumes:
-  mongo-data:
-    name: hydra-mongo-data
   redis-data:
     name: hydra-redis-data
 
 # ── Services ──────────────────────────────────────────────────────────────────
 services:
-
-  # ──────────────────────────────────────────────────────────────────────────
-  # Infrastructure: MongoDB
-  # ──────────────────────────────────────────────────────────────────────────
-  mongodb:
-    image: mongo:7
-    container_name: hydra-mongodb
-    restart: unless-stopped
-    ports:
-      - "27017:27017"         # exposed so you can connect with MongoDB Compass
-    volumes:
-      - mongo-data:/data/db   # data survives container restarts
-    networks:
-      - hydra-net
-    healthcheck:
-      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
-      interval: 15s
-      timeout: 10s
-      retries: 5
-      start_period: 30s
 
   # ──────────────────────────────────────────────────────────────────────────
   # Infrastructure: Redis
@@ -99,13 +82,12 @@ services:
       - .env.docker
     environment:
       AUTH_PORT: "4001"
+      MONGO_URI: ${MONGO_URI}  # MongoDB Atlas URI – set in host environment or .env.docker override
     ports:
       - "4001:4001"
     networks:
       - hydra-net
     depends_on:
-      mongodb:
-        condition: service_healthy
       redis:
         condition: service_healthy
     healthcheck:
@@ -113,7 +95,7 @@ services:
       interval: 15s
       timeout: 5s
       retries: 5
-      start_period: 20s
+      start_period: 60s
 
   # ──────────────────────────────────────────────────────────────────────────
   # Product Service
@@ -129,13 +111,12 @@ services:
       - .env.docker
     environment:
       PRODUCT_PORT: "4002"
+      MONGO_URI: ${MONGO_URI}  # MongoDB Atlas URI – set in host environment or .env.docker override
     ports:
       - "4002:4002"
     networks:
       - hydra-net
     depends_on:
-      mongodb:
-        condition: service_healthy
       redis:
         condition: service_healthy
     healthcheck:
@@ -143,7 +124,7 @@ services:
       interval: 15s
       timeout: 5s
       retries: 5
-      start_period: 20s
+      start_period: 60s
 
   # ──────────────────────────────────────────────────────────────────────────
   # Payment Service
@@ -159,13 +140,12 @@ services:
       - .env.docker
     environment:
       PAYMENT_PORT: "4003"
+      MONGO_URI: ${MONGO_URI}  # MongoDB Atlas URI – set in host environment or .env.docker override
     ports:
       - "4003:4003"
     networks:
       - hydra-net
     depends_on:
-      mongodb:
-        condition: service_healthy
       redis:
         condition: service_healthy
     healthcheck:
@@ -173,7 +153,7 @@ services:
       interval: 15s
       timeout: 5s
       retries: 5
-      start_period: 20s
+      start_period: 60s
 
   # ──────────────────────────────────────────────────────────────────────────
   # Order Service
@@ -189,19 +169,18 @@ services:
       - .env.docker
     environment:
       ORDER_PORT: "4004"
+      MONGO_URI: ${MONGO_URI}  # MongoDB Atlas URI – set in host environment or .env.docker override
     ports:
       - "4004:4004"
     networks:
       - hydra-net
-    depends_on:
-      mongodb:
-        condition: service_healthy
+    # order-service has no Redis dependency; no depends_on needed beyond network availability
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:4004/health"]
       interval: 15s
       timeout: 5s
       retries: 5
-      start_period: 20s
+      start_period: 60s
 
   # ──────────────────────────────────────────────────────────────────────────
   # API Gateway – Instance 1

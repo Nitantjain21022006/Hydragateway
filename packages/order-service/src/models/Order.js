@@ -4,7 +4,7 @@
  * Mongoose Order schema.
  */
 
-const mongoose = require('mongoose');
+const { mongoose } = require('../../../../shared/config/dbConnect');
 
 const orderSchema = new mongoose.Schema(
   {

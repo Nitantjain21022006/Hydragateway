@@ -23,7 +23,7 @@ const fs   = require('fs');
  * @returns {import('winston').Logger}
  */
 function createLBLogger(serviceName) {
-  const logDir  = process.env.LOG_DIR || 'logs';
+  const logDir  = process.env.LOG_DIR || '/app/logs';
   const isProd  = process.env.NODE_ENV === 'production';
 
   // Ensure log directory exists
