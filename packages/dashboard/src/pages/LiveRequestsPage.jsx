@@ -1,3 +1,9 @@
+/**
+ * Dashboard page component displaying real-time request streaming and pipeline views.
+ * Visualizes active incoming HTTP requests as they process through the gateway.
+ * Exports LiveRequestsPage component.
+ */
+
 import React, { useState } from 'react';
 import TopBar from '../components/layout/TopBar';
 import LiveIndicator from '../components/shared/LiveIndicator';
@@ -33,7 +39,7 @@ export default function LiveRequestsPage() {
       />
 
       <main className="page-main animate-fade-in">
-        {/* Controls */}
+
         <div className="card" style={{ marginBottom: 16 }}>
           <div className="card-body" style={{ paddingTop: 14, paddingBottom: 14 }}>
             <div className="controls-row">
@@ -86,7 +92,6 @@ export default function LiveRequestsPage() {
           </div>
         </div>
 
-        {/* Timeline */}
         <div className="card" style={{ overflow: 'hidden', maxHeight: 'calc(100vh - 280px)', overflowY: 'auto' }}>
           <RequestTimeline requests={filtered} />
         </div>

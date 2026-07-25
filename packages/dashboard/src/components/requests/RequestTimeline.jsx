@@ -1,3 +1,9 @@
+/**
+ * Component displaying a timeline feed of recent requests handled by the API Gateway.
+ * Shows live request details including correlation IDs, status codes, and latency.
+ * Exports RequestTimeline component.
+ */
+
 import React, { useState } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { MethodBadge, StatusBadge } from '../shared/StatusBadge';
@@ -33,33 +39,27 @@ export function RequestRow({ request, index }) {
         onClick={() => setExpanded((e) => !e)}
         style={{ animationDelay: `${Math.min(index * 20, 200)}ms` }}
       >
-        {/* Correlation ID */}
+
         <span className="request-corr-id" title={request.correlationId}>
           {request.correlationId ? request.correlationId.slice(0, 8) + '…' : '—'}
         </span>
 
-        {/* Method */}
         <MethodBadge method={request.method} />
 
-        {/* Path */}
         <span className="request-path" title={request.path}>
           {truncate(request.path, 40)}
         </span>
 
-        {/* Service */}
         <span style={{ fontSize: 11, color: 'var(--purple)' }}>
           {request.service || '—'}
         </span>
 
-        {/* Status */}
         <StatusBadge status={request.statusCode || request.status || '—'} />
 
-        {/* Latency */}
         <span className={`request-latency ${getLatencyClass(request.latencyMs)}`}>
           {request.latencyMs ?? '—'}ms
         </span>
 
-        {/* Expand */}
         <span style={{ color: 'var(--text-muted)', display: 'flex', justifyContent: 'flex-end' }}>
           {expanded
             ? <ChevronDown size={14} />
@@ -67,7 +67,6 @@ export function RequestRow({ request, index }) {
         </span>
       </div>
 
-      {/* Expanded Pipeline */}
       {expanded && (
         <div style={{ borderBottom: '1px solid var(--border-subtle)' }}>
           <PipelineView request={request} />
@@ -93,7 +92,7 @@ export default function RequestTimeline({ requests = [] }) {
 
   return (
     <div>
-      {/* Header row */}
+
       <div className="request-row" style={{
         background: 'var(--bg-elevated)',
         cursor: 'default',
@@ -113,7 +112,6 @@ export default function RequestTimeline({ requests = [] }) {
         <span />
       </div>
 
-      {/* Request rows */}
       {requests.map((req, i) => (
         <RequestRow
           key={req.correlationId + (req.timestamp || i)}

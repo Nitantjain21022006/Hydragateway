@@ -1,13 +1,7 @@
 /**
- * product-service/src/models/Product.js
- *
- * Mongoose Product schema.
- *
- * Design decisions:
- * - name, price, and category are required.
- * - stock defaults to 0.
- * - isActive allows for soft-hiding products from the catalog.
- * - toJSON transformation for clean API responses (stripping __v, mapping _id to id).
+ * Mongoose schema and model for Product catalog items.
+ * Defines product name, description, price, stock, active status, and search indexes.
+ * Exports Product model.
  */
 
 const { mongoose } = require('../../../../shared/config/dbConnect');
@@ -62,7 +56,6 @@ const productSchema = new mongoose.Schema(
   }
 );
 
-// Index name for search functionality
 productSchema.index({ name: 'text', description: 'text' });
 productSchema.index({ category: 1 });
 

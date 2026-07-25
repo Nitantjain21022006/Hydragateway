@@ -1,8 +1,11 @@
+/**
+ * Status badge component rendering color-coded state labels for HTTP statuses and service states.
+ * Formats status codes and health strings.
+ * Exports StatusBadge component.
+ */
+
 import React from 'react';
 
-/**
- * StatusBadge – unified badge for HTTP methods, status codes, CB states, and service health.
- */
 export function MethodBadge({ method }) {
   const m = (method || 'GET').toUpperCase();
   const cls = {

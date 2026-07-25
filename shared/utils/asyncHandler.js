@@ -1,14 +1,7 @@
 /**
- * shared/utils/asyncHandler.js
- *
- * Wraps an async Express route handler and forwards any rejected
- * promise to next() so the central error-handler middleware catches it.
- *
- * Without this wrapper every async controller would need its own
- * try/catch, which is boilerplate noise.
- *
- * Usage:
- *   router.get('/path', asyncHandler(async (req, res) => { ... }));
+ * Async error handling wrapper utility for Express route handlers.
+ * Catches rejected promises and passes errors to next() middleware.
+ * Exports asyncHandler function.
  */
 
 function asyncHandler(fn) {
@@ -18,3 +11,4 @@ function asyncHandler(fn) {
 }
 
 module.exports = { asyncHandler };
+

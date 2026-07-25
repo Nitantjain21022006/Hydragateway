@@ -1,17 +1,13 @@
+/**
+ * Custom React hook monitoring circuit breaker state snapshots and live state transitions.
+ * Fetches initial circuit breaker state and subscribes to SSE updates.
+ * Exports useCircuitBreakers custom hook.
+ */
+
 import { useState, useEffect, useCallback, useRef } from 'react';
 import api from '../services/axios';
 import { useSSE } from './useSSE';
 
-/**
- * useCircuitBreakers – combines REST polling with SSE state-change events
- * for instant CB visualization.
- *
- * Strategy:
- *   1. On mount: fetch current state from GET /analytics/circuit-breakers
- *   2. Subscribe to SSE /analytics/stream for 'circuit_breaker' events
- *   3. When a CB event arrives, update only that service's state immediately
- *   4. Fallback poll every POLL_INTERVAL_MS to catch any missed events
- */
 const POLL_INTERVAL = 5_000;
 
 export function useCircuitBreakers() {
@@ -33,7 +29,6 @@ export function useCircuitBreakers() {
     }
   }, []);
 
-  // SSE handler: update specific service state immediately on transition
   const { connected: sseConnected } = useSSE('/analytics/stream', {
     onEvent: (eventName, data) => {
       if (eventName === 'circuit_breaker') {

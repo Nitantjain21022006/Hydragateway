@@ -1,3 +1,9 @@
+/**
+ * Custom React hook maintaining live request ring buffer state via SSE stream events.
+ * Accumulates recent request records for real-time request monitoring views.
+ * Exports useLiveRequests custom hook.
+ */
+
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { useSSE } from './useSSE';
 import api from '../services/axios';
@@ -5,20 +11,12 @@ import { useGateway } from '../context/GatewayContext';
 
 const MAX_REQUESTS = 200;
 
-/**
- * useLiveRequests – maintains a sliding window of the last MAX_REQUESTS
- * request records, streaming from GET /analytics/stream (SSE).
- *
- * On mount, fetches the ring buffer snapshot from /analytics/requests/live
- * for immediate display before SSE kicks in.
- */
 export function useLiveRequests() {
   const { gatewayUrl } = useGateway();
   const [requests,   setRequests]   = useState([]);
   const [paused,     setPaused]     = useState(false);
   const pausedRef = useRef(false);
 
-  // Keep pausedRef in sync with state for use in SSE callback
   const togglePause = useCallback(() => {
     setPaused((p) => {
       pausedRef.current = !p;
@@ -30,17 +28,15 @@ export function useLiveRequests() {
     setRequests([]);
   }, []);
 
-  // Fetch initial snapshot on mount
   const loadInitial = useCallback(async () => {
     try {
       const res = await api.get('/analytics/requests/live?limit=50');
       if (res.data?.success) {
         setRequests(res.data.data.requests || []);
       }
-    } catch { /* ignore – SSE will populate */ }
+    } catch {  }
   }, []);
 
-  // Start SSE – load initial data first, then subscribe
   useEffect(() => {
     setRequests([]);
     loadInitial();
@@ -61,4 +57,3 @@ export function useLiveRequests() {
 
   return { requests, connected, paused, togglePause, clear };
 }
-

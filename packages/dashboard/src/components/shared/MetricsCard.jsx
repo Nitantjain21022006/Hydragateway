@@ -1,3 +1,9 @@
+/**
+ * Reusable metric stat card component displaying key metrics, counts, and trend indicators.
+ * Renders clean numerical KPI callouts with icons.
+ * Exports MetricsCard component.
+ */
+
 import React from 'react';
 
 export default function MetricsCard({ title, value, icon: Icon, trend, accent = 'blue', subtitle }) {

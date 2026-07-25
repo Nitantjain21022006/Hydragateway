@@ -1,3 +1,9 @@
+/**
+ * React component rendering a time-series chart of gateway response latencies.
+ * Visualizes average response time trends over time using Recharts.
+ * Exports ResponseTimeChart component.
+ */
+
 import React from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 

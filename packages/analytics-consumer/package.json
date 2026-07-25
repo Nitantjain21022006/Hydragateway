@@ -1,0 +1,16 @@
+{
+  "name": "analytics-consumer",
+  "version": "1.0.0",
+  "description": "HydraGateway Analytics Kafka Consumer – aggregates event metrics into Redis",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "ioredis": "^5.3.2",
+    "kafkajs": "^2.2.4",
+    "winston": "^3.13.0"
+  }
+}

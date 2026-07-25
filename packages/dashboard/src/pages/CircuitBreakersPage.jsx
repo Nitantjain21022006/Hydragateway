@@ -1,3 +1,9 @@
+/**
+ * Dashboard page component displaying circuit breaker state visualizations across microservices.
+ * Renders breaker cards, state transitions, and manual controls.
+ * Exports CircuitBreakersPage component.
+ */
+
 import React from 'react';
 import TopBar from '../components/layout/TopBar';
 import LiveIndicator from '../components/shared/LiveIndicator';
@@ -10,7 +16,6 @@ export default function CircuitBreakersPage() {
 
   const services = Object.keys(breakers);
 
-  // Summary counts
   const openCount     = services.filter((s) => breakers[s]?.state === 'OPEN').length;
   const halfOpenCount = services.filter((s) => breakers[s]?.state === 'HALF_OPEN').length;
   const closedCount   = services.filter((s) => !breakers[s]?.state || breakers[s]?.state === 'CLOSED').length;
@@ -32,7 +37,7 @@ export default function CircuitBreakersPage() {
       />
 
       <main className="page-main animate-fade-in">
-        {/* Summary bar */}
+
         <div className="grid-3" style={{ marginBottom: 20 }}>
           <div className="card" style={{ padding: '14px 18px' }}>
             <div className="flex-center gap-3">

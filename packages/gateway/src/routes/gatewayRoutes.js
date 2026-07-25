@@ -1,34 +1,7 @@
 /**
- * gateway/src/routes/gatewayRoutes.js
- *
- * Dynamic reverse-proxy routing for all registered downstream services.
- *
- * Design decisions:
- * ─────────────────
- * - We create one `createProxyMiddleware` instance per service entry
- *   in the Service Registry and mount it at the service's `pathPrefix`.
- *   This is clean and explicit — adding a new service requires only a
- *   new entry in serviceRegistry.js, not a code change here.
- *
- * - Before forwarding, we run a lightweight "pre-flight" check:
- *   isServiceHealthy() returns the cached health state from the health
- *   poller. If the service is known to be DOWN we return 503 immediately
- *   and never touch the downstream network.
- *
- * - Headers injected upstream (before proxy forward):
- *     X-Internal-Secret   – authenticates the Gateway to the downstream service
- *     X-User-Id           – the decoded userId from the JWT (if authed)
- *     X-User-Role         – the decoded role from the JWT (if authed)
- *     X-Correlation-ID    – the correlation ID for distributed tracing
- *     X-Forwarded-For     – standard hop-by-hop proxy header
- *     X-Gateway-Instance  – which gateway instance forwarded the request
- *
- * - We do NOT strip the path prefix before forwarding (pathRewrite is not
- *   used). Downstream services should handle /v1/... paths directly.
- *   This keeps the routing transparent and debug-friendly.
- *
- * - proxyErrorHandler maps network-level errors (ECONNREFUSED, ETIMEDOUT)
- *   to clean 502/504 JSON responses instead of the generic proxy HTML error.
+ * Dynamic reverse-proxy router protected by circuit breakers and health check guards.
+ * Forwards validated HTTP requests to registered downstream services and propagates identity headers.
+ * Exports Express router instance and getCircuitBreakerSnapshot.
  */
 
 'use strict';
@@ -44,14 +17,12 @@ const { requestEventBus } = require('../middleware/analyticsCollector');
 const logger = createServiceLogger('gateway-proxy');
 const router = express.Router();
 
-// ── Instantiate Circuit Breakers for all services ─────────────────────────────
 const breakers = {};
 const registry = getRegistry();
 
 registry.forEach((svc) => {
   breakers[svc.name] = new CircuitBreaker({
     name: svc.name,
-    // Phase 14: Broadcast state changes to SSE clients in real-time
     onStateChange: (name, newState, prevState) => {
       requestEventBus.emit('circuit_breaker', {
         service:   name,
@@ -63,9 +34,6 @@ registry.forEach((svc) => {
   });
 });
 
-/**
- * getCircuitBreakerSnapshot – returns status snapshot of all circuit breakers.
- */
 function getCircuitBreakerSnapshot() {
   const snapshot = {};
   Object.keys(breakers).forEach((key) => {
@@ -74,14 +42,11 @@ function getCircuitBreakerSnapshot() {
   return snapshot;
 }
 
-// ── Mount a proxy for every service in the registry ──────────────────────────
-
 registry.forEach((svc) => {
   logger.info(`[GatewayRoutes] Mounting proxy and circuit breaker: ${svc.pathPrefix} → ${svc.target}`);
 
   const cb = breakers[svc.name];
 
-  // Circuit Breaker Guard Middleware
   const cbGuard = (req, res, next) => {
     if (cb.state === 'OPEN') {
       if (Date.now() < cb._nextAttemptTime) {
@@ -97,20 +62,12 @@ registry.forEach((svc) => {
           },
         });
       }
-      // Cooldown elapsed, allow probe (transitions to HALF_OPEN)
       cb._transition('HALF_OPEN');
     }
     return next();
   };
 
-  // Pre-flight health guard — if the poller already knows the service is DOWN,
-  // record that as a circuit breaker failure (so the CB can trip to OPEN) and
-  // reject immediately without touching the network.
-  // EXCEPTION: when the CB is in HALF_OPEN (probe mode), we skip this guard
-  // so the probe request can actually reach the service to validate recovery.
   const healthGuard = (req, res, next) => {
-    // Let HALF_OPEN probes bypass the health guard — the CB itself will record
-    // success or failure based on the actual response from the service.
     if (cb.state === 'HALF_OPEN') {
       return next();
     }
@@ -121,9 +78,7 @@ registry.forEach((svc) => {
         path: req.path,
       });
 
-      // Feed this failure into the circuit breaker so it can trip CLOSED → OPEN
       const connErr = new Error(`${svc.name} is DOWN (health check)`);
-      // No .response property → treated as a network/transient error by _onFailure
       cb._onFailure(connErr);
 
       return res.status(503).json({
@@ -137,33 +92,27 @@ registry.forEach((svc) => {
     return next();
   };
 
-  // http-proxy-middleware instance for this service
   const proxy = createProxyMiddleware({
     target: svc.target + svc.pathPrefix,
     changeOrigin: true,
-    // Connect & read timeouts (in ms) mapped from circuit breaker config
     timeout: cb.requestTimeout,
     proxyTimeout: cb.requestTimeout,
     on: {
       proxyReq: (proxyReq, req) => {
-        // Internal auth header so the downstream service trusts this request
         const internalSecret = process.env.INTERNAL_SECRET;
         if (internalSecret) {
           proxyReq.setHeader('X-Internal-Secret', internalSecret);
         }
 
-        // Propagate authenticated user identity
         if (req.user) {
           proxyReq.setHeader('X-User-Id',   req.user.userId || '');
           proxyReq.setHeader('X-User-Role',  req.user.role   || 'user');
         }
 
-        // Distributed tracing
         if (req.correlationId) {
           proxyReq.setHeader('X-Correlation-ID', req.correlationId);
         }
 
-        // Mark which gateway instance forwarded the request
         proxyReq.setHeader(
           'X-Gateway-Instance',
           process.env.GATEWAY_INSTANCE_ID || 'gateway-1'
@@ -181,13 +130,11 @@ registry.forEach((svc) => {
           path: req.path,
         });
 
-        // Record failure in Circuit Breaker
         cb._onFailure(err);
 
-        // Determine appropriate HTTP status
-        let statusCode = 502; // Bad Gateway (default for unreachable upstream)
+        let statusCode = 502;
         if (err.code === 'ETIMEDOUT' || err.code === 'ESOCKETTIMEDOUT' || err.code === 'ECONNRESET') {
-          statusCode = 504; // Gateway Timeout
+          statusCode = 504;
         }
 
         if (!res.headersSent) {
@@ -201,7 +148,6 @@ registry.forEach((svc) => {
         }
       },
       proxyRes: (proxyRes, req, res) => {
-        // Intercept 5xx status codes as service failures
         if (proxyRes.statusCode >= 500) {
           logger.warn(`[Proxy] Downstream service ${svc.name} returned 5xx status: ${proxyRes.statusCode}`, {
             correlationId: req.correlationId,
@@ -211,16 +157,13 @@ registry.forEach((svc) => {
           statusError.response = { status: proxyRes.statusCode };
           cb._onFailure(statusError);
         } else {
-          // Success (includes 2xx, 3xx, 4xx)
           cb._onSuccess();
         }
       }
     },
   });
 
-  // Mount: cbGuard -> healthGuard -> proxy
   router.use(svc.pathPrefix, cbGuard, healthGuard, proxy);
 });
 
 module.exports = { router, getCircuitBreakerSnapshot };
-

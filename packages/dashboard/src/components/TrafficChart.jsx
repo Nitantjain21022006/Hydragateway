@@ -1,3 +1,9 @@
+/**
+ * Traffic chart component displaying request rates over time.
+ * Visualizes traffic volume metrics.
+ * Exports TrafficChart component.
+ */
+
 import React from 'react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 

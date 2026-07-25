@@ -1,3 +1,9 @@
+/**
+ * Card component displaying downstream microservice liveness and status details.
+ * Shows uptime, target endpoints, and health status badges.
+ * Exports ServiceCard component.
+ */
+
 import React from 'react';
 import { CheckCircle2, AlertCircle, Wifi, Clock } from 'lucide-react';
 import { HealthBadge } from '../shared/StatusBadge';

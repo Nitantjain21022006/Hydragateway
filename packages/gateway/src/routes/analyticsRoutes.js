@@ -1,54 +1,7 @@
 /**
- * gateway/src/routes/analyticsRoutes.js  (Phase 10 + Phase 14 SSE)
- *
- * Analytics Dashboard API – reads collected metrics from Redis and
- * returns them in a structured format suitable for a monitoring dashboard.
- *
- * ──────────────────────────────────────────────────────────────────────────
- * Existing Endpoints (Phase 10, unchanged):
- * ──────────────────────────────────────────────────────────────────────────
- *
- *  GET /analytics/summary
- *  GET /analytics/timeline?date=YYYY-MM-DD
- *  GET /analytics/endpoints?limit=20
- *  DELETE /analytics/reset
- *
- * ──────────────────────────────────────────────────────────────────────────
- * New Endpoints (Phase 14 – SSE / Real-time Dashboard):
- * ──────────────────────────────────────────────────────────────────────────
- *
- *  GET /analytics/circuit-breakers
- *    Returns a snapshot of all circuit breaker states.
- *    Polling fallback for the CB visualization page.
- *
- *  GET /analytics/requests/live
- *    Returns the last N request records from the in-memory ring buffer.
- *    Used for initial page load of the Live Requests page.
- *
- *  GET /analytics/stream
- *    Server-Sent Events endpoint. Streams real-time events:
- *      event: request         – every completed HTTP request
- *      event: circuit_breaker – circuit breaker state transitions
- *      event: heartbeat       – every 15s to prevent proxy timeouts
- *
- *  GET /analytics/logs
- *    Server-Sent Events endpoint. Tails the gateway combined log file.
- *    Accepts ?level=error|warn|info query param for filtering.
- *
- * ──────────────────────────────────────────────────────────────────────────
- * Design decisions (Phase 14):
- * ──────────────────────────────────────────────────────────────────────────
- *  - SSE uses plain HTTP/1.1 – no WebSocket library needed. The browser's
- *    native EventSource API handles reconnection automatically.
- *  - A single /analytics/stream endpoint multiplexes all event types using
- *    the SSE `event:` field. This avoids multiple connections per browser tab.
- *  - Max SSE_MAX_CLIENTS concurrent SSE connections are allowed. New
- *    connections beyond the limit receive 503.
- *  - Each SSE client adds a listener to requestEventBus. It MUST be removed
- *    on disconnect to prevent memory/listener leaks.
- *  - Heartbeats every SSE_HEARTBEAT_MS prevent proxy idle-timeout disconnects.
- *  - CORS headers are set on all /analytics/* routes to allow the dashboard
- *    (localhost:5173) to call the gateway directly.
+ * Express router exposing analytics reporting, Kafka metrics, and real-time SSE streaming endpoints.
+ * Serves metric summaries, timeline data, endpoint hit counts, circuit breaker state, Kafka event stats, and live log streams.
+ * Exports Express router instance.
  */
 
 'use strict';
@@ -61,18 +14,15 @@ const { createServiceLogger } = require('../../../../shared/utils/logger');
 const { getRegistry } = require('../config/serviceRegistry');
 const { requestEventBus, getRecentRequests } = require('../middleware/analyticsCollector');
 const { getCircuitBreakerSnapshot } = require('./gatewayRoutes');
+const { isConnected, producerEvents } = require('../../../../shared/kafka/producer');
 
 const logger = createServiceLogger('gateway-analytics-api');
 const router = express.Router();
 
-// ── Phase 14: SSE Config ──────────────────────────────────────────────────────
 const SSE_MAX_CLIENTS      = parseInt(process.env.SSE_MAX_CLIENTS      || '20',    10);
 const SSE_HEARTBEAT_MS     = parseInt(process.env.SSE_HEARTBEAT_MS     || '15000', 10);
 let   sseClientCount       = 0;
 
-// ── CORS headers for all analytics routes ─────────────────────────────────────
-// This allows the Vite dev server (port 5173) to call the gateway (port 3000)
-// directly. In production, restrict ALLOWED_ORIGIN to the actual dashboard URL.
 const ALLOWED_ORIGIN = process.env.DASHBOARD_ORIGIN || 'http://localhost:5173';
 
 router.use((req, res, next) => {
@@ -86,12 +36,6 @@ router.use((req, res, next) => {
   return next();
 });
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
-
-/**
- * safeGet – fetches a Redis string key and returns it as an integer.
- * Returns 0 if the key doesn't exist or Redis fails.
- */
 async function safeGet(redis, key) {
   try {
     const val = await redis.get(key);
@@ -101,10 +45,6 @@ async function safeGet(redis, key) {
   }
 }
 
-/**
- * safeMget – fetches multiple Redis keys in one round-trip.
- * Returns an array of integers (0 for missing/error).
- */
 async function safeMget(redis, keys) {
   if (!keys.length) return [];
   try {
@@ -115,11 +55,6 @@ async function safeMget(redis, keys) {
   }
 }
 
-/**
- * scanKeys – uses SCAN to find all keys matching a pattern.
- * Returns an array of matching key strings.
- * Safe for production (cursor-based, never blocks).
- */
 async function scanKeys(redis, pattern) {
   const keys = [];
   let cursor = '0';
@@ -130,8 +65,6 @@ async function scanKeys(redis, pattern) {
   } while (cursor !== '0');
   return keys;
 }
-
-// ── Route: GET /analytics/summary ────────────────────────────────────────────
 
 router.get('/summary', async (req, res) => {
   let redis;
@@ -146,7 +79,6 @@ router.get('/summary', async (req, res) => {
   }
 
   try {
-    // ── 1. Core counters ─────────────────────────────────────────────────────
     const [totalRequests, failedRequests, latencyTotalMs, latencyCount] = await safeMget(
       redis,
       [
@@ -164,7 +96,6 @@ router.get('/summary', async (req, res) => {
       ? Math.round(latencyTotalMs / latencyCount)
       : 0;
 
-    // ── 2. Status code breakdown ─────────────────────────────────────────────
     const [s2xx, s3xx, s4xx, s5xx] = await safeMget(redis, [
       'analytics:status:2xx',
       'analytics:status:3xx',
@@ -174,7 +105,6 @@ router.get('/summary', async (req, res) => {
 
     const statusCodeBreakdown = { '2xx': s2xx, '3xx': s3xx, '4xx': s4xx, '5xx': s5xx };
 
-    // ── 3. Per-service breakdown ──────────────────────────────────────────────
     const registry = getRegistry();
     const serviceNames = [...registry.map((s) => s.name), 'gateway'];
     const serviceKeys  = serviceNames.map((n) => `analytics:service:${n}`);
@@ -185,7 +115,6 @@ router.get('/summary', async (req, res) => {
       perServiceBreakdown[name] = serviceCounts[i];
     });
 
-    // ── 4. Per-gateway-instance breakdown ────────────────────────────────────
     const gatewayKeys = await scanKeys(redis, 'analytics:gateway:*');
     const gatewayCounts = await safeMget(redis, gatewayKeys);
     const perGatewayBreakdown = {};
@@ -194,7 +123,6 @@ router.get('/summary', async (req, res) => {
       perGatewayBreakdown[instanceId] = gatewayCounts[i];
     });
 
-    // ── Response ─────────────────────────────────────────────────────────────
     return res.json({
       success: true,
       data: {
@@ -217,8 +145,6 @@ router.get('/summary', async (req, res) => {
   }
 });
 
-// ── Route: GET /analytics/timeline ───────────────────────────────────────────
-
 router.get('/timeline', async (req, res) => {
   let redis;
   try {
@@ -230,7 +156,6 @@ router.get('/timeline', async (req, res) => {
     });
   }
 
-  // Validate / default date parameter
   const dateParam = req.query.date;
   let date;
   if (dateParam && /^\d{4}-\d{2}-\d{2}$/.test(dateParam)) {
@@ -244,7 +169,6 @@ router.get('/timeline', async (req, res) => {
     const timelineKey = `analytics:timeline:${date}`;
     const raw = await redis.hgetall(timelineKey);
 
-    // Build a sorted, gapless minute-by-minute array for charting
     const timeline = [];
     if (raw) {
       const sortedMinutes = Object.keys(raw).sort();
@@ -270,8 +194,6 @@ router.get('/timeline', async (req, res) => {
   }
 });
 
-// ── Route: GET /analytics/endpoints ──────────────────────────────────────────
-
 router.get('/endpoints', async (req, res) => {
   let redis;
   try {
@@ -294,9 +216,7 @@ router.get('/endpoints', async (req, res) => {
 
     const counts = await safeMget(redis, endpointKeys);
 
-    // Pair and sort descending
     const paired = endpointKeys.map((key, i) => {
-      // key format: analytics:endpoint:METHOD:/path
       const withoutPrefix = key.replace('analytics:endpoint:', '');
       const colonIdx      = withoutPrefix.indexOf(':');
       const method        = withoutPrefix.substring(0, colonIdx);
@@ -324,9 +244,6 @@ router.get('/endpoints', async (req, res) => {
   }
 });
 
-// ── Route: DELETE /analytics/reset ───────────────────────────────────────────
-//  ⚠ This deletes ALL analytics keys. Use only in dev/test.
-
 router.delete('/reset', async (req, res) => {
   let redis;
   try {
@@ -338,7 +255,6 @@ router.delete('/reset', async (req, res) => {
     });
   }
 
-  // Safety gate: refuse in production unless explicitly overridden
   if (process.env.NODE_ENV === 'production' && process.env.ALLOW_ANALYTICS_RESET !== 'true') {
     return res.status(403).json({
       success: false,
@@ -350,7 +266,6 @@ router.delete('/reset', async (req, res) => {
   }
 
   try {
-    // Use SCAN to find and delete all analytics:* keys safely
     const keys = await scanKeys(redis, 'analytics:*');
     if (keys.length > 0) {
       await redis.del(...keys);
@@ -377,10 +292,6 @@ router.delete('/reset', async (req, res) => {
   }
 });
 
-// ── Phase 14: GET /analytics/circuit-breakers ─────────────────────────────────
-//  Returns a live snapshot of all circuit breaker states.
-//  Used by the CB visualization page for initial load and polling fallback.
-
 router.get('/circuit-breakers', (req, res) => {
   try {
     const snapshot = getCircuitBreakerSnapshot();
@@ -398,14 +309,10 @@ router.get('/circuit-breakers', (req, res) => {
   }
 });
 
-// ── Phase 14: GET /analytics/requests/live ───────────────────────────────────
-//  Returns the last N request records from the in-memory ring buffer.
-//  Used for initial page load of the Live Requests page before SSE connects.
-
 router.get('/requests/live', (req, res) => {
   const limit  = Math.min(parseInt(req.query.limit || '50', 10), 500);
   const recent = getRecentRequests();
-  const sliced = recent.slice(-limit).reverse(); // Newest first
+  const sliced = recent.slice(-limit).reverse();
 
   return res.json({
     success: true,
@@ -417,17 +324,7 @@ router.get('/requests/live', (req, res) => {
   });
 });
 
-// ── Phase 14: GET /analytics/stream ──────────────────────────────────────────
-//  Server-Sent Events endpoint. Streams:
-//    event: request         → every completed HTTP request
-//    event: circuit_breaker → CB state transitions
-//    event: heartbeat       → every SSE_HEARTBEAT_MS to prevent timeout
-//
-//  Protocol: text/event-stream (SSE)
-//  Browser API: new EventSource('/analytics/stream')
-
 router.get('/stream', (req, res) => {
-  // Check max client limit
   if (sseClientCount >= SSE_MAX_CLIENTS) {
     logger.warn('[SSE] Max client limit reached, rejecting new SSE connection', {
       count: sseClientCount,
@@ -439,19 +336,17 @@ router.get('/stream', (req, res) => {
     });
   }
 
-  // ── SSE Headers ──────────────────────────────────────────────────────────
   res.setHeader('Content-Type',                'text/event-stream');
   res.setHeader('Cache-Control',               'no-cache, no-transform');
   res.setHeader('Connection',                  'keep-alive');
-  res.setHeader('X-Accel-Buffering',           'no'); // Disable nginx buffering
+  res.setHeader('X-Accel-Buffering',           'no');
   res.setHeader('Access-Control-Allow-Origin', ALLOWED_ORIGIN);
-  res.flushHeaders(); // Flush headers immediately so the browser opens the stream
+  res.flushHeaders();
 
   sseClientCount++;
   const clientId = `sse-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   logger.info(`[SSE] Client connected: ${clientId} (total: ${sseClientCount})`);
 
-  // ── SSE Helper: send a named event ───────────────────────────────────────
   const sendEvent = (eventName, data) => {
     if (res.writableEnded) return;
     try {
@@ -462,26 +357,28 @@ router.get('/stream', (req, res) => {
     }
   };
 
-  // ── Send initial connection confirmation ──────────────────────────────────
   sendEvent('connected', { clientId, timestamp: new Date().toISOString() });
 
-  // ── Event Listeners ──────────────────────────────────────────────────────
-  const onRequest = (record) => sendEvent('request', record);
-  const onCB      = (cbData)  => sendEvent('circuit_breaker', cbData);
+  const onRequest    = (record) => sendEvent('request', record);
+  const onCB         = (cbData)  => sendEvent('circuit_breaker', cbData);
+  const onKafkaEvent = (data)    => sendEvent('kafka_event', data);
 
   requestEventBus.on('request',         onRequest);
   requestEventBus.on('circuit_breaker', onCB);
+  producerEvents.on('kafka_event',     onKafkaEvent);
 
-  // ── Heartbeat ─────────────────────────────────────────────────────────────
   const heartbeatTimer = setInterval(() => {
-    sendEvent('heartbeat', { ts: Date.now() });
+    sendEvent('heartbeat', {
+      ts:              Date.now(),
+      kafkaConnected:  isConnected(),
+    });
   }, SSE_HEARTBEAT_MS);
 
-  // ── Cleanup on disconnect ─────────────────────────────────────────────────
   const cleanup = () => {
     clearInterval(heartbeatTimer);
     requestEventBus.off('request',         onRequest);
     requestEventBus.off('circuit_breaker', onCB);
+    producerEvents.off('kafka_event',     onKafkaEvent);
     sseClientCount = Math.max(0, sseClientCount - 1);
     logger.info(`[SSE] Client disconnected: ${clientId} (total: ${sseClientCount})`);
   };
@@ -490,28 +387,104 @@ router.get('/stream', (req, res) => {
   req.on('aborted', cleanup);
 });
 
-// ── Phase 14: GET /analytics/logs ─────────────────────────────────────────────
-//  Server-Sent Events endpoint that tails the gateway's combined log file.
-//  Accepts:
-//    ?level=error|warn|info  (filter by log level, default: all)
-//    ?service=<serviceName>  (filter by service tag, default: all)
-//
-//  Implementation: Uses fs.watch to detect new writes, then reads the new
-//  bytes using a file position tracker (simple log-tailing approach).
+router.get('/kafka', async (req, res) => {
+  let redis;
+  try {
+    redis = getRedisClient();
+  } catch (err) {
+    return res.json({
+      success: true,
+      data: {
+        connected:         isConnected(),
+        published_total:   0,
+        consumed_total:    0,
+        events_per_sec:    0,
+        topics:            {},
+        events:            {},
+        consumer_lag:      {},
+        collected_at:      new Date().toISOString(),
+      },
+    });
+  }
+
+  try {
+    const consumedTotal    = parseInt((await redis.get('kafka:consumed:total'))    || '0', 10);
+
+    const topicKeys = await (async () => {
+      const keys = [];
+      let cursor = '0';
+      do {
+        const [cur, batch] = await redis.scan(cursor, 'MATCH', 'kafka:consumed:topic:*', 'COUNT', 50);
+        cursor = cur;
+        keys.push(...batch);
+      } while (cursor !== '0');
+      return keys;
+    })();
+
+    const eventKeys = await (async () => {
+      const keys = [];
+      let cursor = '0';
+      do {
+        const [cur, batch] = await redis.scan(cursor, 'MATCH', 'kafka:consumed:event:*', 'COUNT', 50);
+        cursor = cur;
+        keys.push(...batch);
+      } while (cursor !== '0');
+      return keys;
+    })();
+
+    const topicBreakdown = {};
+    if (topicKeys.length > 0) {
+      const vals = await redis.mget(...topicKeys);
+      topicKeys.forEach((k, i) => {
+        const topicName = k.replace('kafka:consumed:topic:', '');
+        topicBreakdown[topicName] = parseInt(vals[i] || '0', 10);
+      });
+    }
+
+    const eventBreakdown = {};
+    if (eventKeys.length > 0) {
+      const vals = await redis.mget(...eventKeys);
+      eventKeys.forEach((k, i) => {
+        const evName = k.replace('kafka:consumed:event:', '');
+        eventBreakdown[evName] = parseInt(vals[i] || '0', 10);
+      });
+    }
+
+    const nowSec = Math.floor(Date.now() / 1000);
+    const secKeys = Array.from({ length: 5 }, (_, i) => `kafka:events_per_sec:${nowSec - i}`);
+    const secVals = await redis.mget(...secKeys);
+    const eventsPerSec = secVals.reduce((sum, v) => sum + parseInt(v || '0', 10), 0) / 5;
+
+    return res.json({
+      success: true,
+      data: {
+        connected:        isConnected(),
+        consumed_total:   consumedTotal,
+        events_per_sec:   Math.round(eventsPerSec * 10) / 10,
+        topics:           topicBreakdown,
+        events:           eventBreakdown,
+        consumer_lag:     {},
+        collected_at:     new Date().toISOString(),
+      },
+    });
+  } catch (err) {
+    logger.error('[AnalyticsAPI] Error fetching Kafka metrics', { error: err.message });
+    return res.status(500).json({
+      success: false,
+      error: { code: 'ANALYTICS_ERROR', message: 'Failed to retrieve Kafka metrics.' },
+    });
+  }
+});
 
 router.get('/logs', (req, res) => {
   const levelFilter   = req.query.level   || null;
   const serviceFilter = req.query.service || null;
 
-  // Resolve the gateway combined log file path.
-  // Use path.resolve so we get an absolute path regardless of CWD.
-  // LOG_DIR env var can be relative (e.g. "logs") or absolute.
   const logDir = process.env.LOG_DIR
     ? (path.isAbsolute(process.env.LOG_DIR) ? process.env.LOG_DIR : path.resolve(__dirname, '../../../../', process.env.LOG_DIR))
     : path.resolve(__dirname, '../../../../logs');
   const logFile = path.join(logDir, 'gateway-combined.log');
 
-  // ── SSE Headers ──────────────────────────────────────────────────────────
   res.setHeader('Content-Type',                'text/event-stream');
   res.setHeader('Cache-Control',               'no-cache, no-transform');
   res.setHeader('Connection',                  'keep-alive');
@@ -526,38 +499,28 @@ router.get('/logs', (req, res) => {
     try {
       res.write(`event: log\n`);
       res.write(`data: ${JSON.stringify(data)}\n\n`);
-    } catch { /* ignore */ }
+    } catch { }
   };
 
-  // Send connection confirmation
   sendLogEvent({ type: 'connected', message: 'Log stream connected', timestamp: new Date().toISOString() });
 
-  // Check if log file exists
   if (!fs.existsSync(logFile)) {
     sendLogEvent({ type: 'warning', message: 'Log file does not exist yet. Start sending requests to generate logs.', timestamp: new Date().toISOString() });
-    // Still set up a watch in case the file appears later
   }
 
-  // Track file position for incremental reads
   let filePosition = 0;
   try {
     const stat = fs.statSync(logFile);
-    // Start from end of current file (only show new entries)
     filePosition = stat.size;
-  } catch { /* file may not exist yet */ }
+  } catch { }
 
-  /**
-   * readNewLines – reads any new bytes added to the log file since
-   * the last read, parses JSON log lines, applies filters, and streams
-   * matching entries as SSE events.
-   */
   const readNewLines = () => {
     try {
       const stat = fs.statSync(logFile);
       if (stat.size < filePosition) {
         filePosition = 0;
       }
-      if (stat.size <= filePosition) return; // No new data
+      if (stat.size <= filePosition) return;
 
       const fd     = fs.openSync(logFile, 'r');
       const length = stat.size - filePosition;
@@ -574,9 +537,7 @@ router.get('/logs', (req, res) => {
         try {
           const parsed = JSON.parse(line);
 
-          // Apply level filter
           if (levelFilter && parsed.level !== levelFilter) continue;
-          // Apply service filter
           if (serviceFilter && parsed.service !== serviceFilter) continue;
 
           sendLogEvent({
@@ -588,25 +549,20 @@ router.get('/logs', (req, res) => {
             meta:      parsed,
           });
         } catch {
-          // Skip unparseable lines (e.g. partial writes mid-line)
         }
       }
     } catch (err) {
-      // File not found or read error — not fatal
     }
   };
 
-  // Poll for new log lines every 500ms (reliable on Windows where fs.watch is erratic)
   const pollInterval = setInterval(readNewLines, 500);
 
-  // Heartbeat for log stream
   const heartbeat = setInterval(() => {
     if (!res.writableEnded) {
       res.write(': heartbeat\n\n');
     }
   }, 15000);
 
-  // Cleanup
   const cleanup = () => {
     clearInterval(pollInterval);
     clearInterval(heartbeat);

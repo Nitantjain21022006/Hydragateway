@@ -1,14 +1,7 @@
 /**
- * load-balancer/src/utils/lbLogger.js  (Phase 11)
- *
- * Winston logger factory for the Load Balancer.
- * Mirrors the pattern used by shared/utils/logger.js but kept internal
- * to the load-balancer package so it remains fully independent of the
- * monorepo's shared directory (it's a separate deployable process).
- *
- * In a Docker / multi-process deployment the Load Balancer runs as its
- * own container / process separate from the Gateway — so it cannot require
- * relative paths into the shared/ tree.
+ * Internal logger factory for the Load Balancer package using Winston.
+ * Provides console and file logging setup for load balancer logs.
+ * Exports createLBLogger.
  */
 
 'use strict';
@@ -17,16 +10,10 @@ const { createLogger, format, transports } = require('winston');
 const path = require('path');
 const fs   = require('fs');
 
-/**
- * createLBLogger – returns a Winston logger tagged with the given service name.
- * @param {string} serviceName
- * @returns {import('winston').Logger}
- */
 function createLBLogger(serviceName) {
   const logDir  = process.env.LOG_DIR || '/app/logs';
   const isProd  = process.env.NODE_ENV === 'production';
 
-  // Ensure log directory exists
   if (!fs.existsSync(logDir)) {
     fs.mkdirSync(logDir, { recursive: true });
   }

@@ -1,3 +1,9 @@
+/**
+ * React Context provider managing global gateway analytics state, health data, and SSE event connections.
+ * Provides global gateway data to dashboard UI components.
+ * Exports GatewayProvider and useGatewayContext hook.
+ */
+
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import api from '../services/axios';
 

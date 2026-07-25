@@ -1,21 +1,7 @@
 /**
- * test-cb-flow.js
- *
- * Automated E2E verification script for Phase 12 Circuit Breaker.
- * 
- * Flow:
- * 1. Start all 5 microservices (Auth, Product, Payment, Order, Gateway)
- * 2. Obtain a JWT token and create a test product
- * 3. Place an order to verify happy path (Payment is online)
- * 4. Verify Gateway /health shows circuit breakers in CLOSED state
- * 5. Terminate the Payment Service process
- * 6. Place multiple orders to trip the Order Service's payment circuit breaker
- * 7. Call Gateway payment routes to trip the Gateway's payment circuit breaker
- * 8. Verify subsequent requests fail fast with 503 CIRCUIT_OPEN
- * 9. Wait for cooldown period (10s)
- * 10. Restart Payment Service
- * 11. Send requests to verify HALF-OPEN probe and successful transition back to CLOSED
- * 12. Cleanup and stop all services
+ * Automated end-to-end testing script for circuit breaker state machine transitions.
+ * Simulates microservice failures, verifies fast-fail responses, and tests cooldown recovery.
+ * Launches and manages test service processes.
  */
 
 'use strict';
@@ -40,7 +26,6 @@ function getDependency(name) {
 const mongoose = getDependency('mongoose');
 const ioredis = getDependency('ioredis');
 
-// Config Loader
 const envPath = path.join(__dirname, '.env');
 let envConfig = {};
 if (fs.existsSync(envPath)) {
@@ -107,10 +92,10 @@ function startService(svc) {
     ...process.env,
     ...envConfig,
     PORT: svc.port,
-    HEALTH_CHECK_INTERVAL_MS: '2000', // Speed up gateway health check polling
-    CIRCUIT_BREAKER_COOLDOWN_MS: '10000', // Cooldown = 10s
-    CIRCUIT_BREAKER_FAILURE_THRESHOLD: '3', // Trip after 3 consecutive failures to speed up tests
-    CIRCUIT_BREAKER_SUCCESS_THRESHOLD: '2', // Require 2 consecutive successes to close circuit
+    HEALTH_CHECK_INTERVAL_MS: '2000',
+    CIRCUIT_BREAKER_COOLDOWN_MS: '10000',
+    CIRCUIT_BREAKER_FAILURE_THRESHOLD: '3',
+    CIRCUIT_BREAKER_SUCCESS_THRESHOLD: '2',
   };
 
   const proc = spawn('node', ['src/server.js'], {
@@ -153,7 +138,6 @@ async function waitForServiceHealthy(svc, maxAttempts = 15) {
         return true;
       }
     } catch (err) {
-      // Ignored, retry
     }
     await new Promise((resolve) => setTimeout(resolve, 1000));
   }
@@ -208,7 +192,6 @@ async function runTestFlow() {
 
   await checkPrerequisites();
 
-  // Start all services
   for (const svc of services) {
     startService(svc);
   }
@@ -222,7 +205,6 @@ async function runTestFlow() {
     }
   }
 
-  // Allow Gateway poller to run first health check
   logMessage('⏳ Letting Gateway health poller settle...');
   await new Promise((resolve) => setTimeout(resolve, 3000));
 
@@ -230,7 +212,6 @@ async function runTestFlow() {
   logMessage('🧪 RUNNING CIRCUIT BREAKER TEST FLOW');
   logMessage('======================================================');
 
-  // 1. Setup User and Product
   const testEmail = `cb_test_${Date.now()}@example.com`;
   let token = '';
   let userId = '';
@@ -271,7 +252,6 @@ async function runTestFlow() {
     process.exit(1);
   }
 
-  // 2. Happy Path Request
   logMessage('\n--- STEP 1: Verify Happy Path (Payment Service online) ---');
   try {
     const res = await fetch(`${GATEWAY_URL}/v1/orders`, {
@@ -297,7 +277,6 @@ async function runTestFlow() {
     process.exit(1);
   }
 
-  // 3. Inspect /health and confirm CLOSED state
   logMessage('\n--- STEP 2: Verify Circuit Breakers are CLOSED initially ---');
   try {
     const res = await fetch(`${GATEWAY_URL}/health`);
@@ -315,15 +294,10 @@ async function runTestFlow() {
     process.exit(1);
   }
 
-  // 4. Stop the Payment Service
   logMessage('\n--- STEP 3: Stop Payment Service to simulate outage ---');
   await stopService('payment-service');
 
-  // 5. Trip the Gateway Payment Service Circuit Breaker
   logMessage('\n--- STEP 4: Trip the Gateway Circuit Breaker to OPEN ---');
-  // We configured CIRCUIT_BREAKER_FAILURE_THRESHOLD=3.
-  // We'll call the Payment Service through the Gateway directly: GET /v1/payments/user/:userId
-  // It should fail due to service unavailability, triggering cb._onFailure
   for (let i = 1; i <= 4; i++) {
     try {
       logMessage(`   Sending request #${i} to Gateway Payments (Direct)...`);
@@ -337,7 +311,6 @@ async function runTestFlow() {
     }
   }
 
-  // Verify Gateway Circuit Breaker is now OPEN
   try {
     logMessage('   Checking Gateway /health for breaker state...');
     const res = await fetch(`${GATEWAY_URL}/health`);
@@ -355,7 +328,6 @@ async function runTestFlow() {
     process.exit(1);
   }
 
-  // 6. Test Gateway Fast Fail
   logMessage('\n--- STEP 5: Verify Gateway Fast-Fail (Short-Circuit) ---');
   try {
     logMessage('   Requesting GET /v1/payments/user/... (expecting immediate 503 CIRCUIT_OPEN)');
@@ -382,7 +354,6 @@ async function runTestFlow() {
     process.exit(1);
   }
 
-  // 7. Wait for Cooldown, Restart Service, Test HALF-OPEN Recovery
   logMessage('\n--- STEP 6: Wait for Cooldown and test HALF-OPEN state ---');
   logMessage('⏳ Waiting 11 seconds for circuit cooldown timeout to expire...');
   await new Promise((resolve) => setTimeout(resolve, 11000));
@@ -391,26 +362,22 @@ async function runTestFlow() {
   startService({ name: 'payment-service', path: 'packages/payment-service', port: 4003 });
   await waitForServiceHealthy({ name: 'payment-service', port: 4003 });
 
-  // Gateway health check needs to see it online too
   logMessage('⏳ Waiting for health check state update...');
   await new Promise((resolve) => setTimeout(resolve, 3000));
 
   logMessage('👉 Sending first probe request to Gateway payments (should transition to HALF-OPEN, then succeed)...');
   try {
-    // This request should transition OPEN -> HALF_OPEN, execute the call, and succeed (status 200)
     const res = await fetch(`${GATEWAY_URL}/v1/payments/user/${userId}`, {
       headers: { 'Authorization': `Bearer ${token}` }
     });
     const data = await res.json();
     logMessage(`   Response Status: ${res.status}`);
     
-    // Check health snapshot
     const healthRes = await fetch(`${GATEWAY_URL}/health`);
     const health = await healthRes.json();
     const payBreaker = health.circuitBreakers['payment-service'];
     logMessage(`   Circuit Breaker State after 1st success: ${payBreaker.state} (Success Count: ${payBreaker.successCount})`);
 
-    // Send 2nd request to satisfy successThreshold=2
     logMessage('👉 Sending second request (should transition HALF-OPEN -> CLOSED)...');
     const res2 = await fetch(`${GATEWAY_URL}/v1/payments/user/${userId}`, {
       headers: { 'Authorization': `Bearer ${token}` }
@@ -430,7 +397,6 @@ async function runTestFlow() {
     process.exit(1);
   }
 
-  // Finished E2E CB validation successfully!
   logMessage('\n======================================================');
   logMessage('🎉 ALL CIRCUIT BREAKER Lifecycle tests PASSED!');
   logMessage('======================================================');

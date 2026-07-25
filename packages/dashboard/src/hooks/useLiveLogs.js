@@ -1,22 +1,21 @@
+/**
+ * Custom React hook subscribing to Server-Sent Events for real-time gateway log streaming.
+ * Maintains log entries state and applies level/service filters.
+ * Exports useLiveLogs custom hook.
+ */
+
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { useSSE } from './useSSE';
 import { useGateway } from '../context/GatewayContext';
 
 const MAX_LOGS = 300;
 
-/**
- * useLiveLogs – streams log entries from GET /analytics/logs (SSE).
- *
- * Maintains a sliding window of the last MAX_LOGS entries.
- * Supports pause/resume and clear.
- */
 export function useLiveLogs(filters = {}) {
   const { gatewayUrl } = useGateway();
   const [logs,    setLogs]    = useState([]);
   const [paused,  setPaused]  = useState(false);
   const pausedRef = useRef(false);
 
-  // Clear logs when switching gateway instances
   useEffect(() => {
     setLogs([]);
   }, [gatewayUrl]);
@@ -32,7 +31,6 @@ export function useLiveLogs(filters = {}) {
     setLogs([]);
   }, []);
 
-  // Build query string from filters
   const params = new URLSearchParams();
   if (filters.level)   params.set('level',   filters.level);
   if (filters.service) params.set('service', filters.service);
@@ -42,7 +40,7 @@ export function useLiveLogs(filters = {}) {
     onEvent: (eventName, data) => {
       if (eventName !== 'log') return;
       if (pausedRef.current) return;
-      if (data.type !== 'log') return; // skip connected/warning system messages
+      if (data.type !== 'log') return; 
 
       setLogs((prev) => {
         const next = [...prev, data];
@@ -53,4 +51,3 @@ export function useLiveLogs(filters = {}) {
 
   return { logs, connected, paused, togglePause, clear };
 }
-

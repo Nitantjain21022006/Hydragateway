@@ -1,13 +1,12 @@
 /**
- * order-service/src/middleware/validateRequest.js
- *
- * Validates incoming request bodies using express-validator.
+ * Express validator middleware and validation chains for Order Service requests.
+ * Enforces schema validation rules on order creation and lookup parameters.
+ * Exports validateWith, createOrderRules, userOrdersRules, and orderStatusRules.
  */
 
 const { body, param, validationResult } = require('express-validator');
 const { AppError } = require('../../../../shared/utils/errorResponse');
 
-/** Run validators and collect errors */
 function validate(req) {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
@@ -15,7 +14,6 @@ function validate(req) {
   }
 }
 
-/** Validation chain for creating order */
 const createOrderRules = [
   body('userId').notEmpty().withMessage('User ID is required'),
   body('items').isArray({ min: 1 }).withMessage('Items must be a non-empty array'),
@@ -28,17 +26,14 @@ const createOrderRules = [
   body('paymentMethod').notEmpty().withMessage('Payment method is required').isIn(['CREDIT_CARD', 'DEBIT_CARD', 'PAYPAL', 'STRIPE_SIMULATION']).withMessage('Invalid payment method'),
 ];
 
-/** Validation for user order history */
 const userOrdersRules = [
   param('userId').notEmpty().withMessage('User ID is required'),
 ];
 
-/** Validation for order status check */
 const orderStatusRules = [
   param('orderId').notEmpty().withMessage('Order ID is required'),
 ];
 
-/** Middleware factory */
 function validateWith(rules) {
   return [
     ...rules,

@@ -9,6 +9,7 @@
     <img src="https://img.shields.io/badge/Redis-Cache-DC382D.svg?style=for-the-badge&logo=redis&logoColor=white" alt="Redis" />
     <img src="https://img.shields.io/badge/MongoDB-NoSQL-47A248.svg?style=for-the-badge&logo=mongodb&logoColor=white" alt="MongoDB" />
     <img src="https://img.shields.io/badge/React-Dashboard-61DAFB.svg?style=for-the-badge&logo=react&logoColor=black" alt="React" />
+    <img src="https://img.shields.io/badge/Apache_Kafka-Event_Streaming-231F20.svg?style=for-the-badge&logo=apachekafka&logoColor=white" alt="Kafka" />
   </p>
 </div>
 
@@ -97,11 +98,13 @@ The network is logically segmented into public-facing ingress endpoints and priv
 | **API Gateway 1** | `3000` | Private (VPC) | Reverse proxy, Authentication, Rate Limiting, Response Caching. |
 | **API Gateway 2** | `3001` | Private (VPC) | Redundant gateway instance for failover testing. |
 | **Auth Service** | `4001` | Private (VPC) | JWT Issuance, User Registration, Password Hashing. |
-| **Product Service** | `4002` | Private (VPC) | Inventory management and catalog CRUD operations. |
-| **Payment Service** | `4003` | Private (VPC) | Mock payment processing (simulates automated failures & latency). |
+| **Product Service** | `4002` | Private (VPC) | Inventory management, catalog CRUD, and Kafka inventory consumer. |
+| **Payment Service** | `4003` | Private (VPC) | Mock payment processing; Kafka async order consumer and result publisher. |
 | **Order Service** | `4004` | Private (VPC) | Transactional orchestrator. Communicates with Product/Payment services. |
-| **Redis Server** | `6379` | Internal | Datastore for Rate Limiting, Analytics Pipelines, and Request Caching. |
+| **Redis Server** | `6379` | Internal | Datastore for Rate Limiting, Analytics Pipelines, Request Caching, and Kafka metrics. |
 | **MongoDB** | `27017` | Internal | Highly available persistent data storage for all microservices. |
+| **Kafka Broker** | `9092` | Internal | KRaft-mode event streaming for async service-to-service communication. |
+| **Analytics Consumer** | — | Internal | Background process consuming all Kafka topics and aggregating metrics into Redis. |
 
 ---
 
@@ -181,7 +184,49 @@ sequenceDiagram
 
 ---
 
-## 📈 7. Caching & Analytics Strategy
+## 📨 7. Kafka Event-Driven Architecture
+
+HydraGateway integrates **Apache Kafka** (KRaft mode, no ZooKeeper) for asynchronous service-to-service communication. All existing synchronous REST APIs are fully preserved — Kafka adds a parallel async layer.
+
+### Event Topics
+
+| Topic | Producer | Consumer(s) | Description |
+|:------|:---------|:------------|:------------|
+| `order.created` | Order Service | Payment Service, Analytics Consumer | Emitted after every order save (PAID or FAILED) |
+| `payment.completed` | Payment Service | Product Service, Analytics Consumer | Emitted when async payment succeeds |
+| `payment.failed` | Payment Service | Order Service, Analytics Consumer | Emitted when async payment fails — triggers order reconciliation |
+| `inventory.updated` | Product Service | Analytics Consumer | Emitted after stock is reduced per item |
+| `analytics.event` | Auth Service, API Gateway | Analytics Consumer | User login events and product view tracking |
+
+### Event Flow
+
+```
+POST /v1/orders  (synchronous REST — unchanged)
+  └─► Order Service  ─────────────► HTTP ──► Payment Service  (sync response to client)
+        │
+        └─► Kafka: order.created  ──────────────────────────────────────────────────►
+                                     Payment Service (async) ──► Kafka: payment.completed
+                                                                         │
+                                                                         ├─► Product Service (reduce stock)
+                                                                         │     └─► Kafka: inventory.updated
+                                                                         └─► Order Service (reconcile status)
+
+POST /v1/auth/login  ──► Kafka: analytics.event  {eventType: "user.login"}
+GET  /v1/products/:id ─► Kafka: analytics.event  {eventType: "product.viewed"}
+
+All topics ──► Analytics Consumer ──► Redis (kafka:consumed:*) ──► Dashboard /kafka page
+```
+
+### Shared Kafka Module
+
+All producers and consumers import from `shared/kafka/`:
+- **`topics.js`** — centralized topic name constants
+- **`producer.js`** — singleton producer; fire-and-forget, never crashes the host service
+- **`consumer.js`** — factory with idempotency key deduplication and graceful shutdown
+
+---
+
+## 📈 8. Caching & Analytics Strategy
 
 Redis is utilized extensively across the architecture to manage state and speed:
 
@@ -198,33 +243,36 @@ The repository utilizes npm workspaces to keep boundaries strict while efficient
 ```text
 HydraGateway/
 ├── packages/
-│   ├── load-balancer/      # L7 Router & Health Poller
-│   ├── gateway/            # API Gateway & Middleware pipeline
-│   ├── auth-service/       # Identity, Registration & JWT issuer
-│   ├── product-service/    # Product catalog with cache invalidation
-│   ├── payment-service/    # Payment processor (with simulated faults)
-│   ├── order-service/      # Order orchestrator utilizing Circuit Breakers
-│   └── dashboard/          # React SPA for live metrics and monitoring
+│   ├── load-balancer/          # L7 Router & Health Poller
+│   ├── gateway/                # API Gateway & Middleware pipeline
+│   ├── auth-service/           # Identity, Registration & JWT issuer
+│   ├── product-service/        # Product catalog with cache invalidation + Kafka inventory consumer
+│   ├── payment-service/        # Payment processor + Kafka order consumer & result publisher
+│   ├── order-service/          # Order orchestrator + Kafka producer & payment result consumer
+│   ├── analytics-consumer/     # Background Kafka consumer aggregating event metrics into Redis
+│   └── dashboard/              # React SPA for live metrics, monitoring, and Kafka dashboard
 │
 ├── shared/
-│   ├── config/             # Connection pooling for MongoDB & Redis
-│   ├── middleware/         # Trace ID injection & Internal Auth guards
-│   └── utils/              # Winston loggers & Circuit Breaker FSM
+│   ├── config/                 # Connection pooling for MongoDB & Redis
+│   ├── kafka/                  # Shared KafkaJS producer, consumer factory, and topic constants
+│   ├── middleware/              # Trace ID injection & Internal Auth guards
+│   └── utils/                  # Winston loggers & Circuit Breaker FSM
 │
-├── test-cb-flow.js         # Automated Circuit Breaker resilience tests
-└── package.json            # Root workspace config
+├── test-cb-flow.js             # Automated Circuit Breaker resilience tests
+└── package.json                # Root workspace config
 ```
 
 ---
 
-## 🚀 9. Getting Started
+## 🚀 10. Getting Started
 
 ### 📋 Prerequisites
 - **Node.js** (v18+)
 - **MongoDB** (Local on `27017` or Atlas URI)
 - **Redis** (Local instance on `6379`)
+- **Docker & Docker Compose** (for the full Kafka + Docker stack)
 
-### 🛠️ Setup
+### 🛠️ Local Setup (without Docker)
 ```bash
 # 1. Clone & Install
 git clone https://github.com/Vision21/HydraGateway.git
@@ -232,9 +280,23 @@ cd HydraGateway
 npm install
 
 # 2. Configure Environment
-cp .env.example .env
+# .env already contains all defaults — update MONGO_URI if needed
 ```
-*(Ensure `MONGO_URI` and `REDIS_HOST` point to your running database instances).*
+*(Kafka events are gracefully dropped in local dev if no broker is running — all services still function.)*
+
+### 🐳 Docker Compose Setup (with Kafka)
+```bash
+# Set your MongoDB Atlas URI first
+export MONGO_URI="mongodb+srv://..."
+
+# Start the entire stack (Redis + Kafka KRaft + all services + analytics-consumer + dashboard)
+docker compose up --build
+
+# Access points:
+# React Dashboard:    http://localhost:5173
+# Load Balancer:      http://localhost:8080
+# Kafka Broker:       localhost:9092 (internal)
+```
 
 ---
 

@@ -1,3 +1,9 @@
+/**
+ * Custom React hook for controlling automated load test traffic generation from the dashboard.
+ * Triggers burst and background HTTP requests for system demonstration.
+ * Exports useLoadGenerator custom hook.
+ */
+
 import { useState, useCallback, useRef } from 'react';
 import axios from 'axios';
 import {
@@ -6,14 +12,6 @@ import {
   LOAD_BALANCER_URL,
 } from '../context/GatewayContext';
 
-// ── URL helpers ────────────────────────────────────────────────────────────────
-
-/**
- * Resolve the base URL to send load-test requests to, based on targetMode.
- * 'lb'  → Load Balancer (port 8080) — round-robin across healthy gateways
- * 'gw1' → Gateway 1 directly        (port 3000)
- * 'gw2' → Gateway 2 directly        (port 3001)
- */
 export function resolveTargetUrl(targetMode) {
   switch (targetMode) {
     case 'gw1': return GATEWAY_1_URL;
@@ -22,8 +20,6 @@ export function resolveTargetUrl(targetMode) {
     default:    return LOAD_BALANCER_URL;
   }
 }
-
-// ── Initial state ──────────────────────────────────────────────────────────────
 
 const INITIAL_CONFIG = {
   endpoint:    '/v1/products',
@@ -37,7 +33,7 @@ const INITIAL_CONFIG = {
   autoAuth:    true,
   authEmail:   'test@example.com',
   authPassword: 'Password123',
-  // 'lb' = Load Balancer round-robin (default), 'gw1' = direct to GW1, 'gw2' = direct to GW2
+
   targetMode:  'lb',
 };
 
@@ -54,29 +50,6 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-/**
- * useLoadGenerator – manages browser-side load test execution.
- *
- * Generates HTTP requests in configurable batches using Promise.allSettled.
- * All requests hit the real gateway (or load balancer), triggering analytics,
- * rate limiters, circuit breakers, and SSE broadcasts.
- *
- * When targetMode = 'lb', every request goes to the Load Balancer (port 8080)
- * which distributes them in strict round-robin across healthy gateway instances.
- * A 200-request burst → ~100 to Gateway 1, ~100 to Gateway 2.
- *
- * Returns:
- *   config         – current test configuration (includes targetMode)
- *   setConfig      – update config
- *   running        – whether a test is in progress
- *   stats          – live statistics
- *   start          – begin the load test
- *   stop           – abort the load test
- *   results        – individual request results (capped at 1000)
- *   authStatus     – current auth state
- *   loginOrRegister – trigger auth flow
- *   clearSession   – wipe stored token
- */
 export function useLoadGenerator() {
   const [config,  setConfig]  = useState(INITIAL_CONFIG);
   const [running, setRunning] = useState(false);
@@ -85,13 +58,6 @@ export function useLoadGenerator() {
   const [authStatus, setAuthStatus] = useState({ status: 'idle', message: '' });
   const stopFlag = useRef(false);
 
-  /**
-   * loginOrRegister – try to log in; if user doesn't exist, register first.
-   * @param {string} email
-   * @param {string} password
-   * @param {string} [targetUrl] – which gateway/LB to authenticate against.
-   *                               Defaults to resolving from current config.targetMode.
-   */
   const loginOrRegister = useCallback(async (email, password, targetUrl) => {
     const base = targetUrl || LOAD_BALANCER_URL;
     setAuthStatus({ status: 'loading', message: 'Authenticating...' });
@@ -179,7 +145,6 @@ export function useLoadGenerator() {
       startTime: Date.now(),
     });
 
-    // Resolve which URL to send all load-test requests to
     const targetUrl = resolveTargetUrl(config.targetMode);
 
     const isProtectedPath = (path) => {
@@ -197,7 +162,7 @@ export function useLoadGenerator() {
     if (config.autoAuth && isProtectedPath(config.endpoint)) {
       if (!currentToken) {
         try {
-          // Auth against the same target (LB or direct GW) the load test uses
+
           currentToken = await loginOrRegister(config.authEmail, config.authPassword, targetUrl);
         } catch (err) {
           setResults([{
@@ -219,7 +184,6 @@ export function useLoadGenerator() {
       }
     }
 
-    // Parse config
     let extraHeaders = {};
     try { extraHeaders = JSON.parse(config.headers || '{}'); } catch { extraHeaders = {}; }
 
@@ -244,10 +208,6 @@ export function useLoadGenerator() {
       const batchPromises = Array.from({ length: batchSize }, () => {
         const t0 = Date.now();
 
-        // Every single request goes to the resolved targetUrl:
-        //   'lb'  → LB round-robins it across GW1 / GW2 automatically
-        //   'gw1' → always GW1
-        //   'gw2' → always GW2
         return axios({
           method:  config.method,
           url:     `${targetUrl}${config.endpoint}`,
@@ -256,7 +216,7 @@ export function useLoadGenerator() {
                    ? (() => { try { return JSON.parse(config.body); } catch { return config.body; } })()
                    : undefined,
           timeout: 10000,
-          validateStatus: () => true, // Don't throw on 4xx/5xx
+          validateStatus: () => true, 
         })
           .then((res) => ({
             success:   res.status < 400,
@@ -296,7 +256,6 @@ export function useLoadGenerator() {
     setStats((prev) => ({ ...prev, endTime: Date.now() }));
   }, []);
 
-  // Derived stats
   const derived = (() => {
     const { sent, completed, failed, latencies, startTime, endTime } = stats;
     const duration  = ((endTime || Date.now()) - (startTime || Date.now())) / 1000;

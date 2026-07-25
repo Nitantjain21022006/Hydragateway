@@ -1,16 +1,13 @@
 /**
- * order-service/src/controllers/orderController.js
- *
- * Express controllers for Order routes.
+ * Controller handling order creation, retrieval by ID or user, status updates, and listing.
+ * Invokes OrderService to fulfill order management business logic.
+ * Exports OrderController instance.
  */
 
 const orderService = require('../services/orderService');
 const { sendSuccess } = require('../../../../shared/utils/errorResponse');
 
 class OrderController {
-  /**
-   * POST /v1/orders
-   */
   async createOrder(req, res, next) {
     try {
       const order = await orderService.createOrder(req.body);
@@ -20,9 +17,6 @@ class OrderController {
     }
   }
 
-  /**
-   * GET /v1/orders/user/:userId
-   */
   async getUserOrders(req, res, next) {
     try {
       const orders = await orderService.getOrdersByUser(req.params.userId);
@@ -32,9 +26,6 @@ class OrderController {
     }
   }
 
-  /**
-   * GET /v1/orders/:orderId
-   */
   async getOrderDetails(req, res, next) {
     try {
       const order = await orderService.getOrderById(req.params.orderId);
@@ -44,9 +35,6 @@ class OrderController {
     }
   }
 
-  /**
-   * PATCH /v1/orders/:orderId/status
-   */
   async updateStatus(req, res, next) {
     try {
       const { status } = req.body;
@@ -57,9 +45,6 @@ class OrderController {
     }
   }
 
-  /**
-   * GET /v1/orders
-   */
   async getAllOrders(req, res, next) {
     try {
       const orders = await orderService.getAllOrders();

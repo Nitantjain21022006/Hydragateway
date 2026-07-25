@@ -1,3 +1,9 @@
+/**
+ * Card component visualizing individual circuit breaker state, failure counts, and health metrics.
+ * Displays trip indicators, cooldown timers, and manual reset controls.
+ * Exports CBServiceCard component.
+ */
+
 import React, { useEffect, useRef, useState } from 'react';
 import { CBStateBadge } from '../shared/StatusBadge';
 import { Clock, AlertCircle, CheckCircle2, RefreshCw } from 'lucide-react';
@@ -105,7 +111,7 @@ export default function CBServiceCard({ name, data }) {
       </div>
 
       <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-        {/* Failure bar */}
+
         <div>
           <div className="flex-between" style={{ marginBottom: 6, fontSize: 11 }}>
             <span style={{ color: 'var(--text-muted)' }}>Failure count</span>
@@ -128,7 +134,6 @@ export default function CBServiceCard({ name, data }) {
           </div>
         </div>
 
-        {/* Stats grid */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
           <div style={{
             background: 'var(--bg-elevated)',
@@ -158,7 +163,6 @@ export default function CBServiceCard({ name, data }) {
           </div>
         </div>
 
-        {/* Last failure */}
         {lastFailure && (
           <div className="flex-center gap-2" style={{ fontSize: 11, color: 'var(--text-muted)' }}>
             <AlertCircle size={11} style={{ color: 'var(--rose)' }} />
@@ -166,10 +170,8 @@ export default function CBServiceCard({ name, data }) {
           </div>
         )}
 
-        {/* Recovery timer */}
         {state === 'OPEN' && <RecoveryTimer nextAttemptTime={nextAttempt} />}
 
-        {/* HALF_OPEN notice */}
         {state === 'HALF_OPEN' && (
           <div className="flex-center gap-2" style={{ fontSize: 11, color: 'var(--amber)' }}>
             <RefreshCw size={11} />

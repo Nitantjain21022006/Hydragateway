@@ -1,13 +1,12 @@
 /**
- * payment-service/src/middleware/validateRequest.js
- *
- * Validates incoming request bodies using express-validator.
+ * Express validator rules and middleware for Payment Service endpoints.
+ * Validates payment creation payloads, transaction IDs, and user ID URL parameters.
+ * Exports validateWith, createPaymentRules, statusRules, and historyRules.
  */
 
 const { body, param, validationResult } = require('express-validator');
 const { AppError } = require('../../../../shared/utils/errorResponse');
 
-/** Run validators and collect errors */
 function validate(req) {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
@@ -15,7 +14,6 @@ function validate(req) {
   }
 }
 
-/** Validation chain for creating payment */
 const createPaymentRules = [
   body('userId').notEmpty().withMessage('User ID is required'),
   body('amount').isNumeric().withMessage('Amount must be a number').custom(val => val > 0).withMessage('Amount must be greater than 0'),
@@ -24,17 +22,14 @@ const createPaymentRules = [
   body('orderId').optional().isString().withMessage('Order ID must be a string'),
 ];
 
-/** Validation for transaction status check */
 const statusRules = [
   param('transactionId').notEmpty().withMessage('Transaction ID is required'),
 ];
 
-/** Validation for user history */
 const historyRules = [
   param('userId').notEmpty().withMessage('User ID is required'),
 ];
 
-/** Middleware factory */
 function validateWith(rules) {
   return [
     ...rules,

@@ -1,15 +1,12 @@
 /**
- * auth-service/src/middleware/validateRequest.js
- *
- * Validates incoming request bodies using express-validator.
- * Throws a standardised AppError with details on failure so the
- * error handler can return structured validation feedback to the client.
+ * Express middleware and rules for request payload validation in Auth Service.
+ * Validates request bodies against schemas and handles validation errors.
+ * Exports validateWith, registerRules, and loginRules.
  */
 
 const { body, validationResult } = require('express-validator');
 const { AppError } = require('../../../../shared/utils/errorResponse');
 
-/** Run validators and collect errors */
 function validate(req) {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
@@ -17,7 +14,6 @@ function validate(req) {
   }
 }
 
-/** Validation chain for registration */
 const registerRules = [
   body('name')
     .trim()
@@ -35,13 +31,11 @@ const registerRules = [
     .matches(/[0-9]/).withMessage('Password must contain at least one number'),
 ];
 
-/** Validation chain for login */
 const loginRules = [
   body('email').trim().notEmpty().isEmail().normalizeEmail(),
   body('password').notEmpty().withMessage('Password is required'),
 ];
 
-/** Middleware factory – runs given rules, then validates */
 function validateWith(rules) {
   return [
     ...rules,

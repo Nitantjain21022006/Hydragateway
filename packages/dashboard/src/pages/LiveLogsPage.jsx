@@ -1,3 +1,9 @@
+/**
+ * Dashboard page component providing real-time log tailing and streaming views.
+ * Renders interactive log viewer with filtering and search capabilities.
+ * Exports LiveLogsPage component.
+ */
+
 import React, { useState } from 'react';
 import TopBar from '../components/layout/TopBar';
 import LiveIndicator from '../components/shared/LiveIndicator';
@@ -21,7 +27,6 @@ export default function LiveLogsPage() {
 
   const { logs, connected, paused, togglePause, clear } = useLiveLogs(filters);
 
-  // Client-side search on top of server-side level/service filter
   const filtered = search
     ? logs.filter((l) =>
         (l.message || '').toLowerCase().includes(search.toLowerCase()) ||
@@ -38,7 +43,7 @@ export default function LiveLogsPage() {
       />
 
       <main className="page-main animate-fade-in">
-        {/* Controls */}
+
         <div className="card" style={{ marginBottom: 14 }}>
           <div className="card-body" style={{ paddingTop: 12, paddingBottom: 12 }}>
             <div className="controls-row">
@@ -55,7 +60,6 @@ export default function LiveLogsPage() {
 
               <div className="divider" style={{ width: 1, height: 20, margin: '0 4px' }} />
 
-              {/* Level filter */}
               <div className="flex-center gap-2">
                 {LEVELS.map((l) => (
                   <button
@@ -71,7 +75,6 @@ export default function LiveLogsPage() {
 
               <div className="divider" style={{ width: 1, height: 20, margin: '0 4px' }} />
 
-              {/* Service filter */}
               <select
                 className="select"
                 style={{ width: 170 }}
@@ -81,7 +84,6 @@ export default function LiveLogsPage() {
                 {SERVICES.map((s) => <option key={s}>{s}</option>)}
               </select>
 
-              {/* Search */}
               <div style={{ position: 'relative', flex: 1, minWidth: 160 }}>
                 <Search size={13} style={{
                   position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)',
@@ -96,7 +98,6 @@ export default function LiveLogsPage() {
                 />
               </div>
 
-              {/* Auto-scroll toggle */}
               <label className="flex-center gap-2" style={{ fontSize: 12, color: 'var(--text-muted)', cursor: 'pointer', whiteSpace: 'nowrap' }}>
                 <input
                   type="checkbox"
@@ -114,7 +115,6 @@ export default function LiveLogsPage() {
           </div>
         </div>
 
-        {/* Log viewer */}
         <LogViewer logs={filtered} autoScroll={autoScroll && !paused} />
       </main>
     </>

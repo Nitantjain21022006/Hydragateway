@@ -1,35 +1,34 @@
 /**
- * order-service/src/services/orderService.js
- *
- * Business logic for Orders.
- * Orchestrates communication with Product and Payment services.
+ * Business logic service layer for order processing, item validation, and payment trigger integration.
+ * Communicates with Product and Payment microservices using circuit breakers.
+ * After order creation, publishes order.created to Kafka for async downstream processing.
+ * Exports OrderService instance.
  */
+
+'use strict';
 
 const axios = require('axios');
 const Order = require('../models/Order');
 const { AppError } = require('../../../../shared/utils/errorResponse');
 const { createServiceLogger } = require('../../../../shared/utils/logger');
 const { CircuitBreaker } = require('../../../../shared/utils/circuitBreaker');
+const producer = require('../../../../shared/kafka/producer');
+const { TOPICS } = require('../../../../shared/kafka/topics');
 
 const logger = createServiceLogger('order-service');
 
 const PRODUCT_SERVICE_URL = process.env.PRODUCT_SERVICE_URL || 'http://localhost:4002';
 const PAYMENT_SERVICE_URL = process.env.PAYMENT_SERVICE_URL || 'http://localhost:4003';
 
-// ── Instantiate Circuit Breakers ──────────────────────────────────────────────
 const paymentCircuitBreaker = new CircuitBreaker({ name: 'payment-service' });
 const productCircuitBreaker = new CircuitBreaker({ name: 'product-service' });
 
 class OrderService {
-  /**
-   * Create a new order
-   */
   async createOrder(orderData) {
-    const { userId, items, shippingAddress, paymentMethod } = orderData;
+    const { userId, items, shippingAddress, paymentMethod, correlationId } = orderData;
 
     logger.info(`Creating order for user: ${userId}`);
 
-    // 1. Validate items and calculate total
     let totalAmount = 0;
     const enrichedItems = [];
 
@@ -49,9 +48,9 @@ class OrderService {
         totalAmount += itemTotal;
 
         enrichedItems.push({
-          productId: item.productId,
-          name: product.name,
-          quantity: item.quantity,
+          productId:   item.productId,
+          name:        product.name,
+          quantity:    item.quantity,
           priceAtTime: priceAtTime,
         });
       } catch (err) {
@@ -61,7 +60,6 @@ class OrderService {
       }
     }
 
-    // 2. Create Order in PENDING state
     const order = new Order({
       userId,
       items: enrichedItems,
@@ -73,7 +71,6 @@ class OrderService {
     await order.save();
     logger.info(`Order ${order.id} saved in PENDING state`);
 
-    // 3. Initiate Payment
     try {
       logger.info(`Initiating payment for Order: ${order.id} via ${paymentMethod}`);
       const paymentResponse = await paymentCircuitBreaker.fire(async () => {
@@ -104,19 +101,34 @@ class OrderService {
     }
 
     await order.save();
+
+    setImmediate(async () => {
+      await producer.publish(
+        TOPICS.ORDER_CREATED,
+        order.id,
+        {
+          eventType:       'order.created',
+          orderId:         order.id,
+          userId,
+          items:           enrichedItems,
+          totalAmount,
+          paymentMethod,
+          shippingAddress,
+          status:          order.status,
+          paymentId:       order.paymentId || null,
+          correlationId:   correlationId || null,
+          timestamp:       new Date().toISOString(),
+        }
+      );
+    });
+
     return order;
   }
 
-  /**
-   * Get orders for a specific user
-   */
   async getOrdersByUser(userId) {
     return await Order.find({ userId }).sort('-createdAt');
   }
 
-  /**
-   * Get order by ID
-   */
   async getOrderById(orderId) {
     const order = await Order.findById(orderId);
     if (!order) {
@@ -125,9 +137,6 @@ class OrderService {
     return order;
   }
 
-  /**
-   * Update order status manually (e.g. for SHIPPING)
-   */
   async updateOrderStatus(orderId, status) {
     const order = await Order.findByIdAndUpdate(
       orderId,
@@ -143,9 +152,6 @@ class OrderService {
     return order;
   }
 
-  /**
-   * Get all orders
-   */
   async getAllOrders() {
     return await Order.find().sort('-createdAt');
   }

@@ -1,3 +1,9 @@
+/**
+ * Dashboard page component dedicated to downstream microservice health inspection.
+ * Renders health state cards for all registered backend microservices.
+ * Exports ServiceHealthPage component.
+ */
+
 import React from 'react';
 import TopBar from '../components/layout/TopBar';
 import ServiceCard, { GatewayCard } from '../components/service-health/ServiceCard';
@@ -24,7 +30,7 @@ export default function ServiceHealthPage() {
       />
 
       <main className="page-main animate-fade-in">
-        {/* Summary */}
+
         <div className="grid-2" style={{ marginBottom: 20, maxWidth: 400 }}>
           <div className="card" style={{ padding: '14px 18px' }}>
             <div className="flex-center gap-3">
@@ -54,7 +60,7 @@ export default function ServiceHealthPage() {
           </div>
         ) : (
           <>
-            {/* Downstream Services */}
+
             <p className="section-title">Downstream Services</p>
             {services.length === 0 ? (
               <div className="empty-state">
@@ -70,7 +76,6 @@ export default function ServiceHealthPage() {
               </div>
             )}
 
-            {/* Gateway Instances */}
             {gateways.length > 0 && (
               <>
                 <p className="section-title" style={{ marginTop: 8 }}>Gateway Instances</p>

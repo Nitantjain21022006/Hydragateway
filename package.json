@@ -25,6 +25,7 @@
   "author": "HydraGateway",
   "license": "MIT",
   "dependencies": {
+    "kafkajs": "^2.2.4",
     "lucide-react": "^1.24.0",
     "react-router-dom": "^7.18.1",
     "recharts": "^3.9.2",

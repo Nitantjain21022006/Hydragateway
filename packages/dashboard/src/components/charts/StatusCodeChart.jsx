@@ -1,3 +1,9 @@
+/**
+ * React component rendering a status code breakdown chart (2xx, 3xx, 4xx, 5xx).
+ * Displays HTTP status response distribution.
+ * Exports StatusCodeChart component.
+ */
+
 import React from 'react';
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 

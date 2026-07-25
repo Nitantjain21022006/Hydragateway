@@ -1,3 +1,9 @@
+/**
+ * Interactive dashboard page component for generating synthetic traffic loads.
+ * Allows triggering test traffic patterns to test rate limiting and circuit breakers.
+ * Exports LoadGeneratorPage component.
+ */
+
 import React, { useState, useCallback, useEffect } from 'react';
 import TopBar from '../components/layout/TopBar';
 import { useLoadGenerator, resolveTargetUrl } from '../hooks/useLoadGenerator';
@@ -9,10 +15,8 @@ import {
   Server, ArrowRight
 } from 'lucide-react';
 
-// A valid seeded ObjectId used when no user is logged in
 const FALLBACK_USER_ID = '000000000000000000000001';
 
-// Decode the userId from the stored JWT without verifying signature (dashboard only needs the payload)
 function getUserIdFromToken(token) {
   try {
     if (!token) return null;
@@ -23,10 +27,8 @@ function getUserIdFromToken(token) {
   }
 }
 
-// Product fetching goes via the Load Balancer (gateway handles CORS + auth forwarding)
 const PRODUCT_SERVICE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080';
 
-// Build the order body with a real productId and valid userId
 const ORDER_BODY_TEMPLATE = (productId, userId) => JSON.stringify({
   userId: userId || FALLBACK_USER_ID,
   items: [{ productId, quantity: 1 }],
@@ -51,7 +53,6 @@ const ENDPOINTS = [
   { label: 'GET /analytics/summary',  value: '/analytics/summary',  method: 'GET'  },
 ];
 
-// Traffic target definitions
 const TRAFFIC_TARGETS = [
   {
     value:  'lb',
@@ -101,10 +102,6 @@ function StatBox({ label, value, color = 'var(--text-primary)', mono = false }) 
   );
 }
 
-/**
- * GatewayHealthBadge — shows whether a single gateway is reachable.
- * Used inside the LB traffic target description.
- */
 function GatewayHealthBadge({ id, healthy, target }) {
   const color  = healthy === true  ? 'var(--emerald)'
                : healthy === false ? 'var(--rose)'
@@ -147,15 +144,13 @@ export default function LoadGeneratorPage() {
   const [showBody,         setShowBody]         = useState(false);
   const [showHeaders,      setShowHeaders]       = useState(false);
   const [showAuth,         setShowAuth]          = useState(false);
-  const [productIdStatus,  setProductIdStatus]   = useState(null); // null | 'loading' | 'ok' | 'error'
+  const [productIdStatus,  setProductIdStatus]   = useState(null); 
 
-  // LB health state — polled when targetMode === 'lb'
-  const [lbHealth, setLbHealth] = useState(null); // null | { gateways: [...] }
+  const [lbHealth, setLbHealth] = useState(null); 
   const [lbHealthLoading, setLbHealthLoading] = useState(false);
 
   const progress = derived.progress;
 
-  // Poll /lb-health every 5s when LB mode is active
   const probeLbHealth = useCallback(async () => {
     setLbHealthLoading(true);
     try {
@@ -179,12 +174,10 @@ export default function LoadGeneratorPage() {
     return () => clearInterval(id);
   }, [config.targetMode, probeLbHealth]);
 
-  // Fetch a real active product ID directly from the product service (port 4002)
-  // We bypass the gateway to avoid JWT auth requirements for GET /v1/products
   const fetchAndInjectProductId = useCallback(async () => {
     setProductIdStatus('loading');
     try {
-      // Call product-service directly — no gateway JWT needed
+
       const res = await fetch(`${PRODUCT_SERVICE_URL}/v1/products`);
       const json = await res.json();
       const products = json?.data?.products || json?.data || [];
@@ -196,7 +189,7 @@ export default function LoadGeneratorPage() {
         setProductIdStatus('error');
         return;
       }
-      // Also grab userId from the stored JWT if available
+
       const token = config.authToken || localStorage.getItem('load_gen_token') || '';
       const userId = getUserIdFromToken(token) || FALLBACK_USER_ID;
       setConfig((c) => ({ ...c, body: ORDER_BODY_TEMPLATE(productId, userId) }));
@@ -218,7 +211,7 @@ export default function LoadGeneratorPage() {
       if (preset.method === 'POST') {
         setShowBody(true);
       }
-      // Auto-fetch a real product ID when the order preset is selected
+
       if (preset.needsProductId) {
         fetchAndInjectProductId();
       } else {
@@ -230,7 +223,6 @@ export default function LoadGeneratorPage() {
     }
   };
 
-  // Current target info for display
   const currentTarget = TRAFFIC_TARGETS.find((t) => t.value === config.targetMode) || TRAFFIC_TARGETS[0];
   const resolvedUrl   = resolveTargetUrl(config.targetMode);
 
@@ -243,7 +235,7 @@ export default function LoadGeneratorPage() {
 
       <main className="page-main animate-fade-in">
         <div style={{ display: 'grid', gridTemplateColumns: '360px 1fr', gap: 20, alignItems: 'start' }}>
-          {/* ── Config Panel ──────────────────────────────────────── */}
+
           <div className="card">
             <div className="card-header">
               <span className="card-title">Configuration</span>
@@ -256,7 +248,6 @@ export default function LoadGeneratorPage() {
 
             <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
 
-              {/* ── Traffic Target ──────────────────────────────────── */}
               <div>
                 <label style={{
                   fontSize: 11, color: 'var(--text-muted)', display: 'block',
@@ -265,7 +256,6 @@ export default function LoadGeneratorPage() {
                   Traffic Target
                 </label>
 
-                {/* Segmented button row */}
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6 }}>
                   {TRAFFIC_TARGETS.map((t) => {
                     const Icon = t.icon;
@@ -296,7 +286,6 @@ export default function LoadGeneratorPage() {
                   })}
                 </div>
 
-                {/* Target description + URL */}
                 <div style={{
                   marginTop: 8,
                   padding: '8px 10px',
@@ -317,7 +306,6 @@ export default function LoadGeneratorPage() {
                     {resolvedUrl}{config.endpoint}
                   </span>
 
-                  {/* LB gateway health status (only when LB mode is selected) */}
                   {config.targetMode === 'lb' && (
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 2 }}>
                       {lbHealthLoading && !lbHealth && (
@@ -342,7 +330,6 @@ export default function LoadGeneratorPage() {
                 </div>
               </div>
 
-              {/* Endpoint preset */}
               <div>
                 <label style={{ fontSize: 11, color: 'var(--text-muted)', display: 'block', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.6px' }}>
                   Endpoint Preset
@@ -354,7 +341,6 @@ export default function LoadGeneratorPage() {
                   ))}
                 </select>
 
-                {/* Product ID fetch status banner */}
                 {productIdStatus === 'loading' && (
                   <div style={{ marginTop: 8, fontSize: 11, color: 'var(--blue)', display: 'flex', alignItems: 'center', gap: 6 }}>
                     <RefreshCw size={11} style={{ animation: 'spin 1s linear infinite' }} />
@@ -382,7 +368,6 @@ export default function LoadGeneratorPage() {
                 )}
               </div>
 
-              {/* Method + custom endpoint */}
               <div style={{ display: 'grid', gridTemplateColumns: '90px 1fr', gap: 8 }}>
                 <div>
                   <label style={{ fontSize: 11, color: 'var(--text-muted)', display: 'block', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.6px' }}>Method</label>
@@ -409,7 +394,6 @@ export default function LoadGeneratorPage() {
                 </div>
               </div>
 
-              {/* Requests + Concurrency */}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                 <div>
                   <label style={{ fontSize: 11, color: 'var(--text-muted)', display: 'block', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.6px' }}>
@@ -441,7 +425,6 @@ export default function LoadGeneratorPage() {
                 </div>
               </div>
 
-              {/* Batch delay */}
               <div>
                 <label style={{ fontSize: 11, color: 'var(--text-muted)', display: 'block', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.6px' }}>
                   Delay Between Batches (ms)
@@ -457,7 +440,6 @@ export default function LoadGeneratorPage() {
                 />
               </div>
 
-              {/* Authentication Settings Accordion */}
               <div>
                 <button
                   type="button"
@@ -471,7 +453,7 @@ export default function LoadGeneratorPage() {
                   </span>
                   {showAuth ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
                 </button>
-                
+
                 {showAuth && (
                   <div style={{
                     marginTop: 8,
@@ -483,7 +465,7 @@ export default function LoadGeneratorPage() {
                     flexDirection: 'column',
                     gap: 10
                   }}>
-                    {/* Auto-Authenticate Checkbox */}
+
                     <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11, cursor: 'pointer', userSelect: 'none' }}>
                       <input
                         type="checkbox"
@@ -494,7 +476,6 @@ export default function LoadGeneratorPage() {
                       <span>Auto-Authenticate on Start</span>
                     </label>
 
-                    {/* Email/Password Fields */}
                     <div style={{
                       display: 'flex',
                       flexDirection: 'column',
@@ -515,7 +496,7 @@ export default function LoadGeneratorPage() {
                           placeholder="test@example.com"
                         />
                       </div>
-                      
+
                       <div>
                         <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                           Password
@@ -557,7 +538,6 @@ export default function LoadGeneratorPage() {
                       </div>
                     </div>
 
-                    {/* Feedback Messages */}
                     {authStatus.message && (
                       <div style={{
                         fontSize: 10,
@@ -571,7 +551,6 @@ export default function LoadGeneratorPage() {
                       </div>
                     )}
 
-                    {/* Token override */}
                     <div style={{
                       paddingTop: 8,
                       borderTop: '1px solid rgba(255,255,255,0.05)'
@@ -605,7 +584,6 @@ export default function LoadGeneratorPage() {
                 )}
               </div>
 
-              {/* Headers toggle */}
               <div>
                 <button
                   className="btn btn-ghost btn-sm"
@@ -627,7 +605,6 @@ export default function LoadGeneratorPage() {
                 )}
               </div>
 
-              {/* Body toggle (POST/PUT) */}
               {['POST', 'PUT', 'PATCH'].includes(config.method) && (
                 <div>
                   <button
@@ -651,7 +628,6 @@ export default function LoadGeneratorPage() {
                 </div>
               )}
 
-              {/* Rate limit warning */}
               <div style={{
                 background: 'var(--amber-dim)',
                 border: '1px solid rgba(245,158,11,0.2)',
@@ -667,7 +643,6 @@ export default function LoadGeneratorPage() {
                 <span>Non-analytics routes are rate-limited to 100 req/min per IP. The generator will trigger 429s on high concurrency.</span>
               </div>
 
-              {/* Start / Stop */}
               {!running ? (
                 <button className="btn btn-success" style={{ width: '100%' }} onClick={start}>
                   <Play size={14} /> Start Load Test
@@ -680,9 +655,8 @@ export default function LoadGeneratorPage() {
             </div>
           </div>
 
-          {/* ── Stats Panel ───────────────────────────────────────── */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-            {/* Progress */}
+
             {(running || stats.startTime) && (
               <div className="card">
                 <div className="card-body">
@@ -705,7 +679,6 @@ export default function LoadGeneratorPage() {
               </div>
             )}
 
-            {/* KPI Grid */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
               <StatBox label="Sent"        value={stats.sent.toLocaleString()}       color="var(--blue)" />
               <StatBox label="Completed"   value={stats.completed.toLocaleString()}  color="var(--text-primary)" />
@@ -721,7 +694,6 @@ export default function LoadGeneratorPage() {
               <StatBox label="Max Latency" value={`${derived.maxLatency}ms`} color={derived.maxLatency > 500 ? 'var(--rose)' : 'var(--amber)'} mono />
             </div>
 
-            {/* Results table (last 20) */}
             {results.length > 0 && (
               <div className="card">
                 <div className="card-header">
@@ -769,7 +741,6 @@ export default function LoadGeneratorPage() {
               </div>
             )}
 
-            {/* Empty hint */}
             {!running && !stats.startTime && (
               <div className="card">
                 <div className="empty-state">

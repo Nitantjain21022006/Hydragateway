@@ -1,3 +1,9 @@
+/**
+ * Main analytics dashboard overview page component.
+ * Displays high-level KPIs, traffic charts, response time analytics, and system status.
+ * Exports DashboardPage component.
+ */
+
 import React from 'react';
 import { Activity, XCircle, BarChart3, Clock, TrendingUp, Layers } from 'lucide-react';
 import MetricsCard from '../components/shared/MetricsCard';
@@ -96,7 +102,6 @@ export default function DashboardPage() {
   const successRate     = summary?.success_rate      || '100.00%';
   const avgResponseTime = summary?.avg_response_time_ms || 0;
 
-  // Build response time data from per-service breakdown
   const responseData = summary?.per_service_breakdown
     ? Object.entries(summary.per_service_breakdown).map(([service, count]) => ({
         service: service.replace('-service', ''),
@@ -125,7 +130,7 @@ export default function DashboardPage() {
           </div>
         ) : (
           <div className="space-y-6">
-            {/* KPI Cards */}
+
             <div className="grid-4">
               <MetricsCard
                 title="Total Requests"
@@ -154,13 +159,11 @@ export default function DashboardPage() {
               />
             </div>
 
-            {/* Charts row */}
             <div className="grid-2">
               <TrafficChart data={timeline} />
               <ResponseTimeChart data={responseData} />
             </div>
 
-            {/* Second row */}
             <div className="grid-3">
               <StatusCodeChart data={summary?.status_code_breakdown} />
               <ServiceBreakdown data={summary?.per_service_breakdown} />

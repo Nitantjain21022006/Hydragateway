@@ -1,9 +1,15 @@
+/**
+ * Navigation sidebar component for the monitoring dashboard UI.
+ * Provides navigation links to main analytics views and system health pages.
+ * Exports Sidebar component.
+ */
+
 import React, { useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { useGateway } from '../../context/GatewayContext';
 import {
   LayoutDashboard, Radio, GitBranch, Activity, FileText,
-  Zap, ChevronRight, Wifi, WifiOff
+  Zap, ChevronRight, Wifi, WifiOff, Rss
 } from 'lucide-react';
 
 const NAV_ITEMS = [
@@ -15,6 +21,7 @@ const NAV_ITEMS = [
       { to: '/circuit-breakers', label: 'Circuit Breakers', icon: GitBranch },
       { to: '/health',       label: 'Service Health',   icon: Activity },
       { to: '/logs',         label: 'Live Logs',        icon: FileText,   live: true },
+      { to: '/kafka',        label: 'Kafka Events',     icon: Rss },
     ],
   },
   {
@@ -31,7 +38,7 @@ export default function Sidebar({ sseConnected }) {
 
   return (
     <aside className="sidebar animate-slide-in">
-      {/* Logo */}
+
       <div className="sidebar-logo">
         <div className="sidebar-logo-icon">H</div>
         <div>
@@ -40,7 +47,6 @@ export default function Sidebar({ sseConnected }) {
         </div>
       </div>
 
-      {/* Nav */}
       <nav className="sidebar-nav">
         {NAV_ITEMS.map((section) => (
           <div key={section.section}>
@@ -76,7 +82,6 @@ export default function Sidebar({ sseConnected }) {
         ))}
       </nav>
 
-      {/* Footer */}
       <div className="sidebar-footer">
         <div className="flex-center gap-2" style={{ marginBottom: 8 }}>
           {sseConnected ? (
@@ -87,7 +92,7 @@ export default function Sidebar({ sseConnected }) {
               <span style={{ color: 'var(--rose)', fontSize: 11 }}>Stream offline</span></>
           )}
         </div>
-        
+
         <div style={{ width: '100%' }}>
           <label style={{ fontSize: 9, fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: 4, letterSpacing: '0.5px' }}>
             ACTIVE GATEWAY
@@ -116,4 +121,3 @@ export default function Sidebar({ sseConnected }) {
     </aside>
   );
 }
-

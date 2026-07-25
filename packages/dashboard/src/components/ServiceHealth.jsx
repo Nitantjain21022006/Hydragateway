@@ -1,3 +1,9 @@
+/**
+ * Component summarizing overall system microservice health status.
+ * Renders status overview cards for registered downstream services.
+ * Exports ServiceHealth component.
+ */
+
 import React from 'react';
 import { CheckCircle2, AlertTriangle, AlertCircle } from 'lucide-react';
 

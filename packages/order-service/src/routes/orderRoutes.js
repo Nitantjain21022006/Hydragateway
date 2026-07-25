@@ -1,7 +1,7 @@
 /**
- * order-service/src/routes/orderRoutes.js
- *
- * RESTful routes for Order Service.
+ * Express router mapping RESTful HTTP endpoints for Order Service.
+ * Connects routes for creation, listing, status updates, and user history to validation and controllers.
+ * Exports Express router instance.
  */
 
 const express = require('express');
@@ -10,35 +10,30 @@ const { validateWith, createOrderRules, userOrdersRules, orderStatusRules } = re
 
 const router = express.Router();
 
-// Create order
 router.post(
   '/',
   validateWith(createOrderRules),
   orderController.createOrder
 );
 
-// Get user orders
 router.get(
   '/user/:userId',
   validateWith(userOrdersRules),
   orderController.getUserOrders
 );
 
-// Get order details
 router.get(
   '/:orderId',
   validateWith(orderStatusRules),
   orderController.getOrderDetails
 );
 
-// Update order status (Internal/Admin)
 router.patch(
   '/:orderId/status',
   validateWith(orderStatusRules),
   orderController.updateStatus
 );
 
-// Get all orders
 router.get(
   '/',
   orderController.getAllOrders

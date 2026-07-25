@@ -1,8 +1,7 @@
 /**
- * payment-service/src/services/paymentService.js
- *
- * Business logic for Payments.
- * Implements payment simulation and history tracking.
+ * Business logic service layer for simulating payment processing and transaction queries.
+ * Manages payment record persistence, status transitions, and user transaction history.
+ * Exports PaymentService instance.
  */
 
 const Payment = require('../models/Payment');
@@ -12,11 +11,7 @@ const { createServiceLogger } = require('../../../../shared/utils/logger');
 const logger = createServiceLogger('payment-service');
 
 class PaymentService {
-  /**
-   * Process a payment (Simulation)
-   */
   async processPayment(paymentData) {
-    // 1. Initialize payment record as PENDING
     const payment = new Payment({
       ...paymentData,
       status: 'PENDING'
@@ -25,11 +20,8 @@ class PaymentService {
 
     logger.info(`Simulating payment processing for Transaction: ${payment.transactionId}`);
 
-    // 2. Perform Simulation Logic
-    // In a real system, this would call a gateway like Stripe/PayPal
-    const isSuccess = Math.random() > 0.1; // 90% success rate simulation
+    const isSuccess = Math.random() > 0.1;
 
-    // Simulate async processing delay
     await new Promise(resolve => setTimeout(resolve, 1000));
 
     if (isSuccess) {
@@ -46,16 +38,10 @@ class PaymentService {
     return payment;
   }
 
-  /**
-   * Get payment history for a user
-   */
   async getPaymentHistory(userId) {
     return await Payment.find({ userId }).sort('-createdAt');
   }
 
-  /**
-   * Get detail/status of a specific transaction
-   */
   async getTransactionStatus(transactionId) {
     const payment = await Payment.findOne({ transactionId });
     if (!payment) {
@@ -64,9 +50,6 @@ class PaymentService {
     return payment;
   }
 
-  /**
-   * Get all payments
-   */
   async getAllPayments() {
     return await Payment.find().sort('-createdAt');
   }

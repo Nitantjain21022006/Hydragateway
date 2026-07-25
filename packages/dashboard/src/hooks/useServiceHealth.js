@@ -1,13 +1,14 @@
+/**
+ * Custom React hook polling downstream service liveness health state.
+ * Periodically checks gateway health endpoints for microservice availability.
+ * Exports useServiceHealth custom hook.
+ */
+
 import { useState, useEffect, useCallback, useRef } from 'react';
 import api from '../services/axios';
 
 const POLL_INTERVAL = 5_000;
 
-/**
- * useServiceHealth – polls /health and /lb-health every POLL_INTERVAL ms.
- *
- * Returns merged health data for all services and gateway instances.
- */
 export function useServiceHealth() {
   const [services,     setServices]     = useState([]);
   const [gateways,     setGateways]     = useState([]);

@@ -1,21 +1,17 @@
 /**
- * auth-service/src/controllers/authController.js
- *
- * Handles: Register, Login, Logout, Me (token validation probe).
- *
- * Design decisions:
- * - JWT is signed with HS256 using the JWT_SECRET env var.
- * - Logout is stateless at this layer – the Gateway Redis layer can
- *   maintain a token blocklist if needed (future enhancement).
- * - On login we update lastLoginAt for audit purposes.
+ * Controller handling user registration, authentication, logout, profile retrieval, and token validation.
+ * Interacts with User model and generates JWT tokens.
+ * On successful login, publishes a user.login analytics event to Kafka asynchronously.
+ * Exports register, login, logout, me, and validateToken controller handlers.
  */
 
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const { AppError, sendSuccess } = require('../../../../shared/utils/errorResponse');
 const { asyncHandler } = require('../../../../shared/utils/asyncHandler');
+const producer = require('../../../../shared/kafka/producer');
+const { TOPICS } = require('../../../../shared/kafka/topics');
 
-/** Generate a signed JWT for a user */
 function signToken(userId, role) {
   return jwt.sign(
     { sub: userId, role },
@@ -24,9 +20,6 @@ function signToken(userId, role) {
   );
 }
 
-/**
- * POST /v1/auth/register
- */
 const register = asyncHandler(async (req, res) => {
   const { name, email, password } = req.body;
 
@@ -41,13 +34,9 @@ const register = asyncHandler(async (req, res) => {
   sendSuccess(res, { token, user }, 201);
 });
 
-/**
- * POST /v1/auth/login
- */
 const login = asyncHandler(async (req, res) => {
   const { email, password } = req.body;
 
-  // Explicitly select password (hidden by default on schema)
   const user = await User.findOne({ email }).select('+password');
   if (!user || !(await user.comparePassword(password))) {
     throw new AppError('Invalid email or password', 401, 'INVALID_CREDENTIALS');
@@ -61,23 +50,29 @@ const login = asyncHandler(async (req, res) => {
   await user.save({ validateBeforeSave: false });
 
   const token = signToken(user._id, user.role);
+
+  setImmediate(async () => {
+    await producer.publish(
+      TOPICS.ANALYTICS_EVENT,
+      user._id.toString(),
+      {
+        eventType:     'user.login',
+        userId:        user._id.toString(),
+        email:         user.email,
+        role:          user.role,
+        correlationId: req.correlationId || null,
+        timestamp:     new Date().toISOString(),
+      }
+    );
+  });
+
   sendSuccess(res, { token, user });
 });
 
-/**
- * POST /v1/auth/logout
- * Stateless logout – client must discard the token.
- * A future enhancement would add the token to a Redis blocklist.
- */
 const logout = asyncHandler(async (_req, res) => {
   sendSuccess(res, { message: 'Logged out successfully' });
 });
 
-/**
- * GET /v1/auth/me
- * Returns the authenticated user's profile.
- * Requires the Gateway JWT middleware to populate req.user.
- */
 const me = asyncHandler(async (req, res) => {
   const userId = req.headers['x-user-id'] || (req.user && req.user.sub);
   if (!userId) {
@@ -91,10 +86,6 @@ const me = asyncHandler(async (req, res) => {
   sendSuccess(res, { user });
 });
 
-/**
- * POST /v1/auth/validate  (internal route – called by Gateway)
- * Validates a JWT and returns the decoded payload.
- */
 const validateToken = asyncHandler(async (req, res) => {
   const { token } = req.body;
   if (!token) {

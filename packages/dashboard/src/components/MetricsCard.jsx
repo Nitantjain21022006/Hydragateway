@@ -1,3 +1,9 @@
+/**
+ * Stat card component displaying summary analytics metrics.
+ * Renders KPI cards for traffic, latencies, and error rates.
+ * Exports MetricsCard component.
+ */
+
 import React from 'react';
 
 const MetricsCard = ({ title, value, icon, trend }) => {

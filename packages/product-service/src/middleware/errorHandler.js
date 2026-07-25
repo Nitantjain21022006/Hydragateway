@@ -1,7 +1,7 @@
 /**
- * product-service/src/middleware/errorHandler.js
- *
- * Centralized error handling middleware for the Product Service.
+ * Express error handling middleware for Product Service.
+ * Formats Mongoose validation, duplicate key, and cast errors into standardized API response envelopes.
+ * Exports errorHandler middleware function.
  */
 
 const { sendError, AppError } = require('../../../../shared/utils/errorResponse');
@@ -12,12 +12,10 @@ const logger = createServiceLogger('product-service');
 function errorHandler(err, req, res, _next) {
   let error = err;
 
-  // Mongoose CastError (invalid ObjectId)
   if (err.name === 'CastError') {
     error = new AppError(`Invalid ${err.path}: ${err.value}`, 400, 'INVALID_ID');
   }
 
-  // Mongoose ValidationError
   if (err.name === 'ValidationError') {
     const details = Object.values(err.errors).map((e) => ({
       field: e.path,
@@ -26,13 +24,11 @@ function errorHandler(err, req, res, _next) {
     error = new AppError('Validation failed', 422, 'VALIDATION_ERROR', details);
   }
 
-  // MongoDB duplicate key
   if (err.code === 11000) {
     const field = Object.keys(err.keyValue)[0];
     error = new AppError(`Duplicate value for field: ${field}`, 409, 'DUPLICATE_KEY');
   }
 
-  // Log based on severity
   const statusCode = error.statusCode || 500;
   if (statusCode >= 500) {
     logger.error('Unhandled Server Error', {

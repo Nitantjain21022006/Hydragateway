@@ -1,7 +1,7 @@
 /**
- * payment-service/src/server.js
- *
- * Entry point for the Payment Service.
+ * Express application server entry point for Payment Service.
+ * Connects database, mounts correlation middleware, logs requests, registers routes, starts Kafka consumers, and handles graceful shutdown.
+ * Launches HTTP server on configured port.
  */
 
 const path = require('path');
@@ -13,20 +13,19 @@ const { correlationId } = require('../../../shared/middleware/correlationId');
 const { createServiceLogger } = require('../../../shared/utils/logger');
 const paymentRoutes = require('./routes/paymentRoutes');
 const { errorHandler } = require('./middleware/errorHandler');
+const producer = require('../../../shared/kafka/producer');
+const orderConsumer = require('./consumers/orderConsumer');
 
 const logger = createServiceLogger('payment-service');
 const app = express();
 
-// ── Middleware ──────────────────────────────────────────────────────────────
 app.use(express.json({ limit: '10kb' }));
 app.use(express.urlencoded({ extended: false }));
 app.use(correlationId);
 
-// Centralized HTTP request logging
 const { createRequestLogger } = require('../../../shared/middleware/requestLogger');
 app.use(createRequestLogger(logger));
 
-// ── Routes ──────────────────────────────────────────────────────────────────
 app.get('/health', (_req, res) => {
   res.json({
     status: 'ok',
@@ -38,7 +37,6 @@ app.get('/health', (_req, res) => {
 
 app.use('/v1/payments', paymentRoutes);
 
-// ── 404 Handler ─────────────────────────────────────────────────────────────
 app.use((_req, res) => {
   res.status(404).json({
     success: false,
@@ -46,26 +44,28 @@ app.use((_req, res) => {
   });
 });
 
-// ── Error Handler ───────────────────────────────────────────────────────────
 app.use(errorHandler);
 
-// ── Start ────────────────────────────────────────────────────────────────────
 const PORT = parseInt(process.env.PAYMENT_PORT || '4003', 10);
 
 async function start() {
   await connectDB();
+
+  await producer.connect();
+  await orderConsumer.start();
+
   const server = app.listen(PORT, () => {
     logger.info(`Payment Service listening on port ${PORT}`);
   });
 
-  // ── Graceful Shutdown ──────────────────────────────────────────────────────
   const shutdown = (signal) => {
     logger.info(`${signal} received – shutting down gracefully`);
-    server.close(() => {
+    server.close(async () => {
+      await orderConsumer.disconnect();
+      await producer.disconnect();
       logger.info('HTTP server closed');
       process.exit(0);
     });
-    // Force exit after 15 s if connections don't drain
     setTimeout(() => process.exit(1), 15000).unref();
   };
 

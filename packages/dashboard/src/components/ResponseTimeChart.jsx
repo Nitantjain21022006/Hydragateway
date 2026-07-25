@@ -1,3 +1,9 @@
+/**
+ * Latency chart component rendering average response times.
+ * Displays historical response time metrics.
+ * Exports ResponseTimeChart component.
+ */
+
 import React from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 

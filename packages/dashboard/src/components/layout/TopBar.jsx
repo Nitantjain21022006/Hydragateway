@@ -1,3 +1,9 @@
+/**
+ * Top header bar component displaying live connection status indicators and global controls.
+ * Renders system environment status and user navigation header.
+ * Exports TopBar component.
+ */
+
 import React from 'react';
 import { RefreshCw, Radio } from 'lucide-react';
 import { useGateway, GATEWAY_1_URL, LOAD_BALANCER_URL } from '../../context/GatewayContext';
@@ -5,7 +11,6 @@ import { useGateway, GATEWAY_1_URL, LOAD_BALANCER_URL } from '../../context/Gate
 export default function TopBar({ title, subtitle, actions, lastUpdated }) {
   const { gatewayUrl } = useGateway();
 
-  // Derive a human-readable label + colour for the active gateway
   const gwLabel = gatewayUrl === GATEWAY_1_URL
     ? 'Gateway 1 · :3000'
     : gatewayUrl === LOAD_BALANCER_URL
@@ -31,7 +36,6 @@ export default function TopBar({ title, subtitle, actions, lastUpdated }) {
 
       <div className="topbar-spacer" />
 
-      {/* Active gateway badge — always visible so users know which gateway's data they're viewing */}
       <div style={{
         display: 'flex',
         alignItems: 'center',

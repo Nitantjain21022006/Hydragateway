@@ -1,13 +1,7 @@
 /**
- * shared/middleware/internalAuth.js
- *
- * Middleware that validates the X-Internal-Secret header on routes
- * that should only be reachable from other HydraGateway services.
- *
- * Design decision: Simple shared-secret approach as a lightweight
- * first line of defence for internal service-to-service calls.
- * In production this would be replaced with mTLS or a service mesh,
- * but this is a practical improvement over having no auth at all.
+ * Middleware for validating inter-service requests using a secret key header.
+ * Restricts access to internal service endpoints by verifying X-Internal-Secret.
+ * Exports internalAuth middleware function.
  */
 
 const { AppError } = require('../utils/errorResponse');
@@ -17,7 +11,6 @@ function internalAuth(req, res, next) {
   const expected = process.env.INTERNAL_SECRET;
 
   if (!expected) {
-    // If secret is not configured, warn loudly but allow in dev only
     if (process.env.NODE_ENV !== 'production') {
       return next();
     }
@@ -34,3 +27,4 @@ function internalAuth(req, res, next) {
 }
 
 module.exports = { internalAuth };
+

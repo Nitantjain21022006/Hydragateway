@@ -1,3 +1,9 @@
+/**
+ * Reusable UI fallback component for empty data sets and missing stats.
+ * Renders placeholder visuals and helpful messaging.
+ * Exports EmptyState component.
+ */
+
 import React from 'react';
 import { Inbox } from 'lucide-react';
 

@@ -1,17 +1,12 @@
+/**
+ * Custom React hook establishing and managing EventSource SSE connections.
+ * Handles automatic reconnection, connection state tracking, and event dispatches.
+ * Exports useSSE custom hook.
+ */
+
 import { useEffect, useRef, useCallback, useState } from 'react';
 import { useGateway } from '../context/GatewayContext';
 
-/**
- * useSSE – Generic Server-Sent Events hook.
- *
- * Opens an EventSource connection to the given path on the gateway.
- * Reconnects automatically after SSE_RECONNECT_MS on error.
- * Cleans up the connection when the component unmounts.
- *
- * @param {string} path  - Relative path, e.g. '/analytics/stream'
- * @param {Object} handlers - { onEvent: (event) => void, onMessage: (data) => void }
- * @returns {{ connected: boolean, disconnect: () => void }}
- */
 export function useSSE(path, handlers = {}) {
   const { gatewayUrl } = useGateway();
   const [connected, setConnected] = useState(false);
@@ -20,7 +15,6 @@ export function useSSE(path, handlers = {}) {
   const reconnectTimer = useRef(null);
   const active         = useRef(true);
 
-  // Keep handlers ref current so we don't need to re-subscribe
   handlersRef.current = handlers;
 
   const connect = useCallback(() => {
@@ -38,16 +32,14 @@ export function useSSE(path, handlers = {}) {
         if (handlersRef.current.onOpen) handlersRef.current.onOpen();
       };
 
-      // Generic message (no event: type)
       es.onmessage = (e) => {
         if (!active.current) return;
         try {
           const data = JSON.parse(e.data);
           if (handlersRef.current.onMessage) handlersRef.current.onMessage(data);
-        } catch { /* ignore parse errors */ }
+        } catch {  }
       };
 
-      // Named event types
       const namedEvents = ['request', 'circuit_breaker', 'heartbeat', 'connected', 'log'];
       namedEvents.forEach((eventName) => {
         es.addEventListener(eventName, (e) => {
@@ -57,7 +49,7 @@ export function useSSE(path, handlers = {}) {
             if (handlersRef.current.onEvent) {
               handlersRef.current.onEvent(eventName, data);
             }
-          } catch { /* ignore */ }
+          } catch {  }
         });
       });
 
@@ -66,7 +58,6 @@ export function useSSE(path, handlers = {}) {
         es.close();
         if (!active.current) return;
 
-        // Auto-reconnect after 3 seconds
         reconnectTimer.current = setTimeout(() => {
           if (active.current) connect();
         }, 3000);
@@ -106,4 +97,3 @@ export function useSSE(path, handlers = {}) {
 
   return { connected, disconnect };
 }
-

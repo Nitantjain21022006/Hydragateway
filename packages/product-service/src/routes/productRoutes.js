@@ -1,7 +1,7 @@
 /**
- * product-service/src/routes/productRoutes.js
- *
- * RESTful routes for Product Service.
+ * Express router mapping RESTful CRUD endpoints for Product Service.
+ * Attaches validation middleware and delegates request handling to productController.
+ * Exports Express router instance.
  */
 
 const express = require('express');
@@ -9,8 +9,6 @@ const { body, param } = require('express-validator');
 const productController = require('../controllers/productController');
 
 const router = express.Router();
-
-// ── Validation Rules ────────────────────────────────────────────────────────
 
 const productValidation = [
   body('name').trim().notEmpty().withMessage('Name is required'),
@@ -23,8 +21,6 @@ const productValidation = [
 const idValidation = [
   param('id').isMongoId().withMessage('Invalid product ID format'),
 ];
-
-// ── Routes ──────────────────────────────────────────────────────────────────
 
 router.post('/', productValidation, productController.createProduct);
 router.get('/', productController.getAllProducts);

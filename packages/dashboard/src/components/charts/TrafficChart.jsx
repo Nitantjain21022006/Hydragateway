@@ -1,3 +1,9 @@
+/**
+ * React component displaying request volume and traffic statistics over time.
+ * Renders real-time and historical request throughput charts.
+ * Exports TrafficChart component.
+ */
+
 import React from 'react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
@@ -20,7 +26,7 @@ const CustomTooltip = ({ active, payload, label }) => {
 };
 
 export default function TrafficChart({ data = [] }) {
-  // Normalize data – support both { minute, requests } and { time, traffic }
+
   const normalized = data.map((d) => ({
     time:    d.minute || d.time,
     traffic: d.requests ?? d.traffic ?? 0,

@@ -1,14 +1,7 @@
 /**
- * payment-service/src/models/Payment.js
- *
- * Mongoose Payment schema.
- *
- * Design decisions:
- * -userId and amount are required for any transaction.
- * - orderId is optional for now (as Order Service is Phase 5), but will be key for integration.
- * - status tracks the lifecycle: PENDING -> COMPLETED/FAILED.
- * - transactionId is a unique UUID generated for each payment attempt.
- * - toJSON transformation for clean API responses.
+ * Mongoose schema and model for Payment transactions.
+ * Manages unique transaction UUID generation, payment status lifecycles, amounts, and payment methods.
+ * Exports Payment model.
  */
 
 const { mongoose } = require('../../../../shared/config/dbConnect');

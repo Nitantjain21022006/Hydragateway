@@ -1,3 +1,9 @@
+/**
+ * Custom React hook fetching and polling API Gateway analytics summaries and timeline metrics.
+ * Manages summary metrics state and refresh intervals.
+ * Exports useAnalytics custom hook.
+ */
+
 import { useState, useEffect, useCallback, useRef } from 'react';
 import api from '../services/axios';
 import { useGateway } from '../context/GatewayContext';
@@ -8,18 +14,6 @@ function formatTimestamp() {
   return new Date().toLocaleTimeString();
 }
 
-/**
- * useAnalytics – polls the gateway analytics API every REFRESH_INTERVAL ms.
- *
- * Returns:
- *   summary    – /analytics/summary data
- *   timeline   – /analytics/timeline data
- *   endpoints  – /analytics/endpoints data
- *   loading    – initial load state
- *   error      – last error message
- *   refresh    – manual refresh function
- *   lastUpdated – human-readable timestamp
- */
 export function useAnalytics() {
   const { gatewayUrl } = useGateway();
   const [summary,     setSummary]     = useState(null);
@@ -65,4 +59,3 @@ export function useAnalytics() {
 
   return { summary, timeline, endpoints, loading, error, refresh: fetchAll, lastUpdated };
 }
-

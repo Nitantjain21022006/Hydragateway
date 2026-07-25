@@ -1,3 +1,9 @@
+/**
+ * Real-time SSE connection status badge component.
+ * Displays animated pulse indicator when connected to live data streams.
+ * Exports LiveIndicator component.
+ */
+
 import React from 'react';
 
 export default function LiveIndicator({ connected, label }) {

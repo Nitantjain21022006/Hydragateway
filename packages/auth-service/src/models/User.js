@@ -1,16 +1,7 @@
 /**
- * auth-service/src/models/User.js
- *
- * Mongoose User schema.
- *
- * Design decisions:
- * - `email` is unique + lowercased at the schema level so duplicate
- *   inserts fail at the DB layer, not in application code.
- * - `password` has `select: false` so it is never returned in a query
- *   result unless explicitly requested with .select('+password').
- * - `comparePassword` is an instance method, keeping password logic
- *   co-located with the model.
- * - `toJSON` strips __v and _id (replaced by id) for a clean API surface.
+ * Mongoose schema and model for User entities in Auth Service.
+ * Manages user fields, password hashing pre-save hooks, and password comparison.
+ * Exports User model.
  */
 
 const { mongoose } = require('../../../../shared/config/dbConnect');
@@ -37,7 +28,7 @@ const userSchema = new mongoose.Schema(
       type: String,
       required: [true, 'Password is required'],
       minlength: [8, 'Password must be at least 8 characters'],
-      select: false, // Never included in query results by default
+      select: false,
     },
     role: {
       type: String,
@@ -66,7 +57,6 @@ const userSchema = new mongoose.Schema(
   }
 );
 
-// Hash password before saving
 userSchema.pre('save', async function (next) {
   if (!this.isModified('password')) return next();
   const rounds = parseInt(process.env.BCRYPT_ROUNDS || '12', 10);
@@ -74,7 +64,6 @@ userSchema.pre('save', async function (next) {
   next();
 });
 
-// Instance method: compare plaintext password with stored hash
 userSchema.methods.comparePassword = async function (plaintext) {
   return bcrypt.compare(plaintext, this.password);
 };

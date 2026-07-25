@@ -1,8 +1,7 @@
 /**
- * product-service/src/controllers/productController.js
- *
- * Express controllers for Product lifecycle.
- * Uses productService for business logic and sendSuccess for responses.
+ * Controller handling product creation, catalog queries, updates, deletions, and Redis cache invalidation.
+ * Interacts with ProductService and handles HTTP responses.
+ * Exports createProduct, getAllProducts, getProductById, updateProduct, and deleteProduct.
  */
 
 const productService = require('../services/productService');
@@ -13,9 +12,6 @@ const { createServiceLogger } = require('../../../../shared/utils/logger');
 
 const logger = createServiceLogger('product-service');
 
-/**
- * invalidateCache - Deletes product-related keys from Redis.
- */
 async function invalidateCache(productId = null) {
   try {
     const redis = getRedisClient();
@@ -30,20 +26,13 @@ async function invalidateCache(productId = null) {
   }
 }
 
-/**
- * POST /v1/products
- */
 const createProduct = asyncHandler(async (req, res) => {
   const product = await productService.createProduct(req.body);
   await invalidateCache();
   sendSuccess(res, { product }, 201);
 });
 
-/**
- * GET /v1/products
- */
 const getAllProducts = asyncHandler(async (req, res) => {
-  // Simple filtering by category if provided in query
   const filters = {};
   if (req.query.category) filters.category = req.query.category;
 
@@ -51,26 +40,17 @@ const getAllProducts = asyncHandler(async (req, res) => {
   sendSuccess(res, { products });
 });
 
-/**
- * GET /v1/products/:id
- */
 const getProductById = asyncHandler(async (req, res) => {
   const product = await productService.getProductById(req.params.id);
   sendSuccess(res, { product });
 });
 
-/**
- * PATCH /v1/products/:id
- */
 const updateProduct = asyncHandler(async (req, res) => {
   const product = await productService.updateProduct(req.params.id, req.body);
   await invalidateCache(req.params.id);
   sendSuccess(res, { product });
 });
 
-/**
- * DELETE /v1/products/:id
- */
 const deleteProduct = asyncHandler(async (req, res) => {
   await productService.deleteProduct(req.params.id);
   await invalidateCache(req.params.id);

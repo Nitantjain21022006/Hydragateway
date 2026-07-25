@@ -1,3 +1,9 @@
+/**
+ * Visual pipeline component showing request lifecycle stages through middleware and downstream proxies.
+ * Displays real-time request progression through gateway layers.
+ * Exports PipelineView component.
+ */
+
 import React from 'react';
 import { Globe, GitBranch, Shield, Gauge, Database, Server, CheckCircle2, XCircle } from 'lucide-react';
 

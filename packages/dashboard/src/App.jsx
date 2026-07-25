@@ -1,3 +1,9 @@
+/**
+ * Main React application component establishing router views and primary layout layout structure.
+ * Configures route paths for dashboard pages within top-level navigation layout.
+ * Exports App component.
+ */
+
 import React from 'react';
 import { Routes, Route } from 'react-router-dom';
 import Sidebar from './components/layout/Sidebar';
@@ -7,16 +13,14 @@ import CircuitBreakersPage from './pages/CircuitBreakersPage';
 import ServiceHealthPage   from './pages/ServiceHealthPage';
 import LiveLogsPage        from './pages/LiveLogsPage';
 import LoadGeneratorPage   from './pages/LoadGeneratorPage';
+import KafkaPage           from './pages/KafkaPage';
 
-// Track if the main SSE stream is connected (used by sidebar status indicator)
-// We use a simple ref-based approach since this is app-wide state
 import { useState } from 'react';
 import { useSSE } from './hooks/useSSE';
 
 function AppWithSSE() {
   const [sseConnected, setSseConnected] = useState(false);
 
-  // Single SSE connection at app level (heartbeat only) to show sidebar status
   useSSE('/analytics/stream', {
     onOpen:  () => setSseConnected(true),
     onEvent: (name) => {
@@ -36,6 +40,7 @@ function AppWithSSE() {
           <Route path="/health"           element={<ServiceHealthPage />} />
           <Route path="/logs"             element={<LiveLogsPage />} />
           <Route path="/load-generator"   element={<LoadGeneratorPage />} />
+          <Route path="/kafka"            element={<KafkaPage />} />
         </Routes>
       </div>
     </div>

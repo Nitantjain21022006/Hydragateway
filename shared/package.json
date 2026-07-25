@@ -1,9 +1,10 @@
 {
   "name": "@hydra/shared",
   "version": "1.0.0",
-  "description": "HydraGateway shared utilities – DB connection, Redis client, middleware",
+  "description": "HydraGateway shared utilities – DB connection, Redis client, middleware, Kafka",
   "dependencies": {
     "ioredis": "^5.3.2",
+    "kafkajs": "^2.2.4",
     "mongoose": "^8.3.2",
     "morgan": "^1.10.0",
     "uuid": "^9.0.0",

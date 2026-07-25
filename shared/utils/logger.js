@@ -1,14 +1,7 @@
 /**
- * shared/utils/logger.js
- *
- * Winston logger factory.
- *
- * Design decisions:
- * - Each service passes its own `serviceName` so every log line is
- *   tagged, making multi-service log aggregation trivial.
- * - In production (NODE_ENV=production) logs are written as JSON to
- *   rotating files so an ELK/Loki stack can ingest them directly.
- * - In development logs are pretty-printed to stdout with colours.
+ * Factory utility for creating service-specific Winston logger instances.
+ * Configures console logging and file transports for error and combined logs.
+ * Exports createServiceLogger.
  */
 
 const { createLogger, format, transports } = require('winston');
@@ -16,14 +9,10 @@ const path = require('path');
 const fs = require('fs');
 
 function createServiceLogger(serviceName) {
-  // Resolve log directory relative to this file (shared/utils/logger.js)
-  // so all services write to the same central <project_root>/logs/ folder,
-  // regardless of each service's working directory.
   const logDir = process.env.LOG_DIR
     ? (path.isAbsolute(process.env.LOG_DIR) ? process.env.LOG_DIR : path.resolve(__dirname, '..', '..', process.env.LOG_DIR))
     : path.resolve(__dirname, '..', '..', 'logs');
 
-  // Ensure log directory exists (services call this at boot)
   if (!fs.existsSync(logDir)) {
     fs.mkdirSync(logDir, { recursive: true });
   }
@@ -56,8 +45,6 @@ function createServiceLogger(serviceName) {
     }),
   ];
 
-  // Always write to log files (dev: plain text, prod: JSON)
-  // This ensures the logs/ directory is always populated for inspection.
   transportList.push(
     new transports.File({
       filename: path.join(logDir, `${serviceName}-error.log`),
@@ -70,7 +57,6 @@ function createServiceLogger(serviceName) {
     })
   );
 
-  // Ensure all gateway components also write to gateway-combined.log
   if (serviceName.startsWith('gateway') && serviceName !== 'gateway') {
     transportList.push(
       new transports.File({

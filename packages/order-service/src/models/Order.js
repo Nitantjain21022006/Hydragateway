@@ -1,7 +1,7 @@
 /**
- * order-service/src/models/Order.js
- *
- * Mongoose Order schema.
+ * Mongoose model and schema definition for Order documents.
+ * Defines order item sub-documents, shipping address fields, total amounts, and payment status states.
+ * Exports Order model.
  */
 
 const { mongoose } = require('../../../../shared/config/dbConnect');
@@ -44,7 +44,7 @@ const orderSchema = new mongoose.Schema(
       country: String,
     },
     paymentId: {
-      type: String, // transactionId from Payment Service
+      type: String,
       index: true,
     },
     status: {
