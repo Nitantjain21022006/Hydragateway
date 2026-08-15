@@ -1,7 +1,7 @@
 <div align="center">
   <h1>⚡ HydraGateway</h1>
   <p><b>Enterprise-Grade Microservices Platform & Layer 7 API Gateway</b></p>
-  <p><i>Architected and Developed by <b>Team Vision21</b></i></p>
+  <p><i>Architected and Developed by <b>Nitant Jain</b></i></p>
   <br />
   <p>
     <img src="https://img.shields.io/badge/Node.js-18.x-green.svg?style=for-the-badge&logo=node.js" alt="Node.js" />
@@ -338,5 +338,5 @@ npm run dev:dashboard
 ---
 
 <div align="center">
-  <p>Built with ❤️ by <b>Team Vision21</b></p>
+  <p>Built with ❤️ by <b>Nitant Jain</b></p>
 </div>
